@@ -1,25 +1,44 @@
 # nginx 片段（自建服务器用）。放进 server { } 块里。
 # 前提：站点根目录就是本仓库（index.html 在根上）。
+#
+# ⚠ add_header 是「覆盖式继承」：只要某个 location 里出现一条 add_header，
+#   该 location 就**不再继承** server 级的任何 add_header。所以下面每个 location
+#   都重新 include 一次安全头，否则最严的 CSP 在入口文档上会整体失效。
+#   把安全头单独存成 security-headers.conf，放在 nginx 配置目录里。
 
-# 安全头。页面零内联脚本 / 零内联样式 / 零外部资源，可以上最严的 CSP。
-add_header X-Content-Type-Options    "nosniff"                    always;
-add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
-add_header X-Frame-Options           "DENY"                       always;
-add_header Permissions-Policy        "geolocation=(), camera=(), microphone=(), payment=()" always;
-add_header Content-Security-Policy   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
-
-# 压缩：is6db.js 有 317 KB，gzip 后约 70 KB，不开就是白等
+# 压缩：is6db.js 有 1547 KB，gzip 后约 227 KB，不开就是白等
 gzip              on;
 gzip_min_length   1024;
 gzip_comp_level   6;
 gzip_types        text/css application/javascript application/json image/svg+xml;
+gzip_vary         on;
 
-# 入口不缓存；带 ?v= 的资源长期缓存
-location = /index.html {
+# 入口不缓存。"/" 与 "*.html" 都要覆盖：用户访问的是 /，不是 /index.html
+location = / {
+    include security-headers.conf;
+    add_header Cache-Control "public, max-age=0, must-revalidate" always;
+    try_files /index.html =404;
+}
+
+location ~* \.html$ {
+    include security-headers.conf;
     add_header Cache-Control "public, max-age=0, must-revalidate" always;
 }
 
-location ~* \.(?:js|css)$ {
+# Service Worker 与 manifest 不能长缓存，否则更新要等一天
+location = /sw.js {
+    include security-headers.conf;
+    add_header Cache-Control "public, max-age=0, must-revalidate" always;
+}
+
+location = /manifest.json {
+    include security-headers.conf;
+    add_header Cache-Control "public, max-age=0, must-revalidate" always;
+}
+
+# 带 ?v= 的资源长期缓存
+location ~* \.(?:js|css|svg)$ {
+    include security-headers.conf;
     add_header Cache-Control "public, max-age=31536000, immutable" always;
 }
 
@@ -28,4 +47,13 @@ types {
     application/javascript  js;
     text/css                css;
     application/json        json;
+    image/svg+xml           svg;
 }
+
+# security-headers.conf 的内容（单独存一份，上面各 location 都 include 它）：
+#
+# add_header X-Content-Type-Options    "nosniff"                    always;
+# add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+# add_header X-Frame-Options           "DENY"                       always;
+# add_header Permissions-Policy        "geolocation=(), camera=(), microphone=(), payment=()" always;
+# add_header Content-Security-Policy   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;

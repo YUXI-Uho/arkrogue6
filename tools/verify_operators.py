@@ -22,7 +22,10 @@ def load(name):
 
 
 def main():
-    main_db = {o["name"]: o for o in load("operators.json")}
+    doc = load("operators.json")
+    # data/operators.json 是 {operators, ranges}；兼容旧格式（纯数组）
+    ops = doc.get("operators") if isinstance(doc, dict) else doc
+    main_db = {o["name"]: o for o in (ops or [])}
     drafts = load("operators_draft_A.json") + load("operators_draft_B.json")
     if not drafts:
         print("没有 draft 数据，跳过")

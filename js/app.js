@@ -802,6 +802,11 @@
       posSel.onchange = function () { op.position = posSel.value; save(); renderSquad(); };
       head.appendChild(posSel);
 
+      // 图鉴详情：技能 / 天赋 / 模组 / 三档面板都在库里，编队卡上给个入口
+      var info = el('button', 'ghost tiny', '详情');
+      info.onclick = function () { showOperatorModal(op.name); };
+      head.appendChild(info);
+
       var del = el('button', 'del tiny', '删除');
       del.onclick = function () {
         Squad.removeAt(state.squad, idx);
@@ -1494,12 +1499,27 @@
 
   // ---------- 弹窗 ----------
   var lastFocus = null;
+
+  // 弹窗里可 Tab 到的元素。DOM 桩没有 querySelectorAll，取不到就返回空数组 ——
+  // 焦点陷阱只是增强，拿不到列表时不能把键盘操作整个卡死。
+  function focusablesIn(box) {
+    if (!box || typeof box.querySelectorAll !== 'function') return [];
+    var nodes = box.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    return Array.prototype.filter.call(nodes, function (n) {
+      return !n.disabled;
+    });
+  }
+
   function openModal(buildFn) {
     var m = document.getElementById('modal');
     var b = document.getElementById('modalBody');
     b.innerHTML = '';
     buildFn(b);
     m.classList.remove('hidden');
+    // 弹窗没有名字的话读屏只会念「对话框」。标题是 buildFn 里画的 h2，回填一次。
+    var h2 = b.children.filter(function (c) { return c && c.tagName === 'H2'; })[0];
+    if (h2 && h2.textContent) m.setAttribute('aria-label', h2.textContent);
     // 打开时把焦点移进弹窗，关闭时还给原来那个元素 —— 否则键盘 / 读屏用户会迷路
     lastFocus = document.activeElement || null;
     var close = document.getElementById('modalClose');
@@ -1527,6 +1547,230 @@
       if (r.obtain) { b.appendChild(el('h3', null, '获取方式')); b.appendChild(el('p', null, r.obtain)); }
       if (r.note) { b.appendChild(el('h3', null, '备注')); b.appendChild(el('p', null, r.note)); }
     });
+  }
+
+  // ---------- 干员详情 ----------
+  // 图鉴数据（三档面板 / 技能 / 天赋 / 模组 / 攻击范围）都在库里，
+  // 这里只负责摆出来；数值计算仍然只认编队里的 panel，详情页不改任何计算口径。
+  var ELITE_LABEL = ['精英零', '精英一', '精英二'];
+
+  function tag(txt, cls) { return el('span', 'tag' + (cls ? ' ' + cls : ''), txt); }
+
+  // 攻击范围：把格子坐标画成方阵。(0,0) 是干员自己站的那格。
+  function renderRangeGrid(range) {
+    var box = el('div', 'range-grid');
+    if (!range || !range.grids || !range.grids.length) {
+      box.appendChild(el('span', 'muted', '（该范围没有格子数据）'));
+      return box;
+    }
+    var set = Object.create(null);
+    var minR = 0, maxR = 0, minC = 0, maxC = 0;
+    range.grids.forEach(function (g) {
+      var r = num(g[0]), c = num(g[1]);
+      set[r + ',' + c] = 1;
+      if (r < minR) minR = r;
+      if (r > maxR) maxR = r;
+      if (c < minC) minC = c;
+      if (c > maxC) maxC = c;
+    });
+    box.style.gridTemplateColumns = 'repeat(' + (maxC - minC + 1) + ', 18px)';
+    for (var r = minR; r <= maxR; r++) {
+      for (var c = minC; c <= maxC; c++) {
+        var cls = 'range-cell';
+        if (set[r + ',' + c]) cls += ' on';
+        if (r === 0 && c === 0) cls += ' self';
+        box.appendChild(el('i', cls));
+      }
+    }
+    return box;
+  }
+
+  function showOperatorModal(ref) {
+    var d = OP.detail(ref);
+    if (!d) { toast('图鉴里没有这名干员，可能是在编队里手动改过名字'); return; }
+
+    openModal(function (b) {
+      var title = d.name + '　' + '★'.repeat(d.rarity || 0);
+      var h2 = el('h2', null, title);
+      // 星号读屏只会念「星号星号」，给它一句人话
+      h2.setAttribute('aria-label', d.name + '，' + (d.rarity || 0) + ' 星');
+      b.appendChild(h2);
+      var meta = el('p', 'op-detail-meta',
+        [d.profession, d.subProfession, d.position].filter(Boolean).join(' · ') +
+        (d.displayNumber ? ' · No.' + d.displayNumber : '') +
+        (d.appellation ? ' · ' + d.appellation : '') +
+        (d.obtain ? ' · ' + d.obtain : ''));
+      b.appendChild(meta);
+
+      if ((d.tags || []).length) {
+        var tagRow = el('div', 'tag-row');
+        d.tags.forEach(function (t) { tagRow.appendChild(tag(t)); });
+        b.appendChild(tagRow);
+      }
+
+      if (d.trait) {
+        b.appendChild(el('h3', null, '特性'));
+        b.appendChild(el('p', null, d.trait));
+      }
+
+      // ---- 精英化三档 ----
+      b.appendChild(el('h3', null, '精英化面板'));
+      if (!d.phases.length) {
+        b.appendChild(el('p', 'muted', '这份数据里没有分阶段面板。'));
+      } else {
+        var t1 = el('table', 'op-table detail-table');
+        var htr = el('tr');
+        ['阶段', '等级', '生命', '攻击', '防御', '法抗', '阻挡', '费用', '间隔', ''].forEach(function (h) {
+          htr.appendChild(el('th', null, h));
+        });
+        t1.appendChild(htr);
+        d.phases.forEach(function (p) {
+          var tr = el('tr');
+          tr.appendChild(el('td', 'nm', ELITE_LABEL[p.elite] || ('E' + p.elite)));
+          [p.level, p.hp, p.atk, p.def, p.res, p.block, p.cost, p.interval].forEach(function (v, i) {
+            tr.appendChild(el('td', 'num', i === 7 ? String(v) : String(v)));
+          });
+          var td = el('td', 'act');
+          var use = el('button', 'tiny', '用此面板');
+          use.onclick = function () { applyPhase(d, p.elite); };
+          td.appendChild(use);
+          tr.appendChild(td);
+          t1.appendChild(tr);
+        });
+        var w1 = el('div', 'table-wrap');
+        w1.appendChild(t1);
+        b.appendChild(w1);
+        b.appendChild(el('p', 'muted',
+          '「用此面板」会把该阶段的面板填进编队（已在编队则直接替换）。满信赖加成按干员固定值另算。'));
+      }
+
+      // ---- 技能 ----
+      b.appendChild(el('h3', null, '技能'));
+      d.skills.forEach(function (s) {
+        var box = el('div', 'skill');
+        var head = el('div', 'skill-head');
+        head.appendChild(el('b', null, 'S' + s.slot + ' ' + s.name));
+        head.appendChild(tag(s.chargeType || '—'));
+        head.appendChild(tag(s.activation || '—'));
+        head.appendChild(tag('SP ' + s.spCost + (s.initSp ? ' / 初 ' + s.initSp : '')));
+        if (s.duration) head.appendChild(tag('持续 ' + s.duration + 's'));
+        // 只在七级与专三不同时才提示，否则同一组数字会重复两遍
+        if (s.spCost7 && s.spCost7 !== s.spCost) head.appendChild(tag('七级 ' + s.spCost7, 'dim'));
+        box.appendChild(head);
+        var desc = el('p', 'skill-desc', s.desc || '');
+        box.appendChild(desc);
+        if (s.rangeId) {
+          var rg = OP.rangeOf(s.rangeId);
+          if (rg) box.appendChild(renderRangeGrid(rg));
+        }
+        b.appendChild(box);
+      });
+      b.appendChild(el('p', 'muted',
+        d.skills.length
+          ? '技能数值取专精三级（10 级技能表最后一档）；被动技能的 SP 一栏没有意义。'
+          : '这名干员没有技能数据（召唤物、特殊形态或数据表里未登记）。'));
+
+      // ---- 天赋 ----
+      if (d.talents.length) {
+        b.appendChild(el('h3', null, '天赋'));
+        d.talents.forEach(function (t) {
+          var box = el('div', 'talent');
+          var head = el('div', 'talent-head');
+          head.appendChild(el('b', null, t.name || ('天赋 ' + t.idx)));
+          head.appendChild(tag(ELITE_LABEL[t.unlockElite] || 'E0', 'dim'));
+          box.appendChild(head);
+          box.appendChild(el('p', 'skill-desc', t.desc || ''));
+          b.appendChild(box);
+        });
+        b.appendChild(el('p', 'muted',
+          '天赋展示的是「最高精英化 + 无潜能要求」那一版；潜能把天赋强化到更高数值的版本没有单列。'));
+      }
+
+      // ---- 模组 ----
+      if (d.modules.length) {
+        b.appendChild(el('h3', null, '模组'));
+        d.modules.forEach(function (m) {
+          var box = el('div', 'module');
+          var head = el('div', 'module-head');
+          head.appendChild(el('b', null, m.name));
+          if (m.type && m.type !== 'INITIAL') head.appendChild(tag(m.type, 'dim'));
+          if (m.unlockElite) head.appendChild(tag('解锁 ' + ELITE_LABEL[m.unlockElite] + ' ' + m.unlockLevel + ' 级', 'dim'));
+          box.appendChild(head);
+          if (!m.levels.length) {
+            box.appendChild(el('p', 'muted', '证章类模组，不提供属性加成。'));
+          } else {
+            var t2 = el('table', 'op-table detail-table');
+            var h2 = el('tr');
+            ['档位', '生命', '攻击', '防御', '法抗', '攻速', '费用', '阻挡', '效果'].forEach(function (h) {
+              h2.appendChild(el('th', null, h));
+            });
+            t2.appendChild(h2);
+            var lastDesc = '';
+            m.levels.forEach(function (lv) {
+              var changed = !!lv.desc && lv.desc !== lastDesc;
+              if (lv.desc) lastDesc = lv.desc;
+              var tr = el('tr');
+              tr.appendChild(el('td', 'nm', 'Lv' + lv.level));
+              [lv.hp, lv.atk, lv.def, lv.res, lv.aspd, lv.cost, lv.block].forEach(function (v) {
+                tr.appendChild(el('td', 'num', v ? '+' + v : '—'));
+              });
+              // 效果文案逐档重复会让三行长得一模一样，只在变化的那一档写出来
+              tr.appendChild(el('td', 'desc', changed ? lv.desc : (lastDesc ? '（同上）' : '—')));
+              t2.appendChild(tr);
+            });
+            var w2 = el('div', 'table-wrap');
+            w2.appendChild(t2);
+            box.appendChild(w2);
+            box.appendChild(el('p', 'muted', '与上一档相同的效果文案不重复显示，沿用上一档。'));
+          }
+          b.appendChild(box);
+        });
+      }
+
+      // ---- 攻击范围 ----
+      if (d.range) {
+        b.appendChild(el('h3', null, '攻击范围（' + ELITE_LABEL[d.elite] + '）'));
+        b.appendChild(renderRangeGrid(d.range));
+      }
+
+      if ((d.potential || []).length) {
+        b.appendChild(el('h3', null, '潜能'));
+        var ul = el('ul');
+        d.potential.forEach(function (p, i) { ul.appendChild(el('li', null, (i + 1) + '. ' + p)); });
+        b.appendChild(ul);
+      }
+    });
+  }
+
+  // 详情页的「用此面板」：已经在编队里就替换面板，否则新增一条
+  function applyPhase(d, elite) {
+    var panel = OP.panelAt(d.id, elite);
+    if (!panel) { toast('这一档没有面板数据'); return; }
+    var idx = indexOfName(d.name);
+    if (idx >= 0) {
+      state.squad[idx].panel = panel;
+      toast('已换成' + (ELITE_LABEL[elite] || 'E' + elite) + '面板');
+    } else {
+      var r = Squad.add(state.squad, OP.makeSquadEntry(d, panel));
+      if (!r.ok) { toast(r.reason); return; }
+      idx = state.squad.length - 1;
+      toast('已按' + (ELITE_LABEL[elite] || 'E' + elite) + '面板加入编队');
+    }
+    closeModal();
+    afterSquadChange();
+    // closeModal 把焦点还给「详情」按钮，但那颗按钮刚被 renderSquad 重建掉了，
+    // 焦点会掉到 body。这里重新落到新卡片的「详情」上，键盘用户不会迷路。
+    focusDetailOf(idx);
+  }
+
+  function focusDetailOf(idx) {
+    if (typeof document.querySelectorAll !== 'function') return;
+    var card = document.querySelectorAll('.op-card')[idx];
+    if (!card || typeof card.querySelectorAll !== 'function') return;
+    var btns = card.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) {
+      if (btns[i].textContent === '详情') { btns[i].focus(); return; }
+    }
   }
 
   function showHelp() {
@@ -1562,12 +1806,23 @@
 
       b.appendChild(el('h3', null, '数据来源'));
       b.appendChild(el('p', null, '藏品效果数值来自游戏数据表 roguelike_topic_table.json 里每件藏品的 buffs/blackboard（结构化：属性、倍率、职业选择器直接读值），文案取官方 usage 字段；解析不到的部分才退回中文文案规则解析，列表里会标「官方结构化」或「文案解析」。'));
-      b.appendChild(el('p', null, '干员面板来自 character_table.json（精英化满级 + 信赖），中文分支名来自 PRTS。仅供个人计算参考，以游戏内表现为准。'));
+      b.appendChild(el('p', null, '干员数据来自 character_table.json（三档精英化面板、天赋、潜能、特性）、skill_table.json（技能数值与文案）、uniequip_table.json 与 battle_equip_table.json（模组）、range_table.json（攻击范围）；中文分支名来自 PRTS。点编队卡上的「详情」可以看这些数据。仅供个人计算参考，以游戏内表现为准。'));
       b.appendChild(el('p', null, '本站为玩家二创工具，与鹰角网络及《明日方舟》官方无关；不收集任何个人信息，编队与藏品选择只存在你自己的浏览器里。'));
 
       // 数据版本块：用户反馈「某个数值不对」时，先要能确认两边看的是不是同一份数据
       b.appendChild(renderDataMeta());
     });
+  }
+
+  // 数据里存的是 UTC（…Z）。直接显示会比本地时钟差几个小时，用户报「某个数值不对」
+  // 时对不上自己的时间，所以这里转成本地时区再显示。
+  function fmtBuiltAt(s) {
+    if (!s) return '-';
+    var d = new Date(s);
+    if (isNaN(d.getTime())) return s;
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+           ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + '（本地）';
   }
 
   function renderDataMeta() {
@@ -1577,10 +1832,12 @@
       ['资源版本', assetVersion()],
       ['数据版本', 'schema v' + m.schemaVersion + (m.gameVersion ? ' · ' + m.gameVersion : '')],
       ['数据指纹', m.dataHash || '-'],
-      ['构建时间', m.builtAt || '-'],
+      ['构建时间', fmtBuiltAt(m.builtAt)],
       ['表行数', '藏品 ' + (counts.relics || 0) + ' · 档位 ' + (counts.relic_stages || 0) +
-                 ' · 干员 ' + (counts.operators || 0)],
-      ['存档格式', 'v' + Migrate.VERSION + '（四张用户表）']
+                 ' · 干员 ' + (counts.operators || 0) + ' · 技能 ' + (counts.operator_skills || 0) +
+                 ' · 天赋 ' + (counts.operator_talents || 0) +
+                 ' · 模组 ' + (counts.operator_modules || 0)],
+      ['存档格式', 'v' + Migrate.VERSION + '（编队 / 藏品选择 / 预设 / 设置）']
     ];
     var box = el('div', 'data-meta');
     rows.forEach(function (r) {
@@ -2137,11 +2394,30 @@
     // Esc 关弹窗：只能点 × 或点背景的话，键盘用户就被关在弹窗里了
     if (typeof document.addEventListener === 'function') {
       document.addEventListener('keydown', function (e) {
-        if (!e || (e.key !== 'Escape' && e.keyCode !== 27)) return;
+        if (!e) return;
         var m = document.getElementById('modal');
-        if (m && !m.classList.contains('hidden')) {
+        var open = m && !m.classList.contains('hidden');
+        if (!open) return;
+
+        if (e.key === 'Escape' || e.keyCode === 27) {
           closeModal();
           if (e.preventDefault) e.preventDefault();
+          return;
+        }
+
+        // 焦点陷阱：没有它，Tab 会在第 4 下就跑到弹窗背后的 700 多个元素里，
+        // 用户既不知道自己出了弹窗，也回不来。
+        if (e.key !== 'Tab' && e.keyCode !== 9) return;
+        var box = document.querySelector ? document.querySelector('.modal-box') : null;
+        var f = focusablesIn(box);
+        if (f.length < 2) return;
+        var first = f[0], last = f[f.length - 1];
+        var active = document.activeElement;
+        var inside = box.contains && box.contains(active);
+        if (e.shiftKey) {
+          if (active === first || !inside) { e.preventDefault(); last.focus(); }
+        } else if (active === last || !inside) {
+          e.preventDefault(); first.focus();
         }
       });
     }

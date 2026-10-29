@@ -10,10 +10,10 @@
 <meta property="og:title" content="沉沦者的黑流树海 · 数值计算器">
 <meta property="og:description" content="勾选藏品，看干员最终面板与全队加成汇总。纯本地运行，不收集任何数据。">
 <meta name="twitter:card" content="summary">
-<link rel="icon" href="assets/icon.svg?v=20261029a" type="image/svg+xml">
-<link rel="apple-touch-icon" href="assets/icon.svg?v=20261029a">
-<link rel="manifest" href="manifest.json?v=20261029a">
-<link rel="stylesheet" href="assets/style.css?v=20261029a">
+<link rel="icon" href="assets/icon.svg?v=20261029h" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg?v=20261029h">
+<link rel="manifest" href="manifest.json?v=20261029h">
+<link rel="stylesheet" href="assets/style.css?v=20261029h">
 </head>
 <body>
 <header class="topbar">
@@ -209,9 +209,11 @@
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="弹窗">
-  <div class="modal-box">
-    <button id="modalClose" class="modal-close">×</button>
-    <div id="modalBody"></div>
+  <div class="modal-frame">
+    <button id="modalClose" class="modal-close" aria-label="关闭">×</button>
+    <div class="modal-box">
+      <div id="modalBody"></div>
+    </div>
   </div>
 </div>
 
@@ -221,17 +223,17 @@
      所有资源带同一个 ?v= 版本串：部署后 CDN / 浏览器会把旧文件缓存住，
      代码更新而 data/is6db.js 仍是旧版（或反过来）会是最难排查的故障。
      版本串只在这一处改，tools/check_enums.py 会校验全部标签完全一致。 -->
-<script src="core/schema.js?v=20261029a"></script>
-<script src="core/enums.js?v=20261029a"></script>
-<script src="core/db/schema.js?v=20261029a"></script>
-<script src="data/is6db.js?v=20261029a"></script>
-<script src="core/db/db.js?v=20261029a"></script>
-<script src="core/db/migrate.js?v=20261029a"></script>
-<script src="js/effects.js?v=20261029a"></script>
-<script src="js/engine.js?v=20261029a"></script>
-<script src="core/repos/operators.repo.js?v=20261029a"></script>
-<script src="core/repos/relics.repo.js?v=20261029a"></script>
-<script src="core/repos/squads.repo.js?v=20261029a"></script>
-<script src="js/app.js?v=20261029a"></script>
+<script src="core/schema.js?v=20261029h"></script>
+<script src="core/enums.js?v=20261029h"></script>
+<script src="core/db/schema.js?v=20261029h"></script>
+<script src="data/is6db.js?v=20261029h"></script>
+<script src="core/db/db.js?v=20261029h"></script>
+<script src="core/db/migrate.js?v=20261029h"></script>
+<script src="js/effects.js?v=20261029h"></script>
+<script src="js/engine.js?v=20261029h"></script>
+<script src="core/repos/operators.repo.js?v=20261029h"></script>
+<script src="core/repos/relics.repo.js?v=20261029h"></script>
+<script src="core/repos/squads.repo.js?v=20261029h"></script>
+<script src="js/app.js?v=20261029h"></script>
 </body>
 </html>

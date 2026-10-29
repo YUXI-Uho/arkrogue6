@@ -31,6 +31,7 @@
    - 可按职业（八个按钮）、星级、名字筛选；同名干员不允许重复添加
    - 也可以点「空白干员」手填面板（可加多个，自动递增命名）
    - 内置 452 名干员的**精英化满级**面板，可勾「满信赖」
+   - 每张干员卡右上角有「**详情**」：三档精英化面板、技能（类型 / SP / 持续 / 专三文案 / 攻击范围）、天赋、模组（三档属性增量 + 效果）、攻击范围方格、潜能。点某一档的「用此面板」会把该档面板填进编队，想算 E1 或 E0 的干员不用手抄数值
 4. **常用编队**：默认折叠成一行，点开后可保存 / 载入 / 覆盖 / 删除。保存的是干员 + 面板 + 信赖 + 指定标记，不含藏品（藏品是当局的）。
 5. 看每个干员卡里的「基础 → 最终 → 变化」，点「加成明细」能看到三组信息：
    - **已生效**：每件藏品给了多少、作用域是谁
@@ -47,6 +48,10 @@
    - 页面底部先给「N 项加成生效 / M 项因条件未满足而未生效」，再用两行一条的清单列出**条件类加成现状**（`●` 生效 / `○` 未生效，第二行写卡在什么条件上）
 
 配置（藏品、编队、预设、战斗状态）自动存在浏览器本地（200ms 防抖），可用「导出 / 导入」搬。导入时会逐条校验，坏数据被丢弃并提示，不会白屏。
+
+9. **分享链接**：点顶栏「分享」，当前配置会被压进链接的 `#cfg=` 里并复制到剪贴板，别人打开就是同一套编队。12 人满编的链接约 1.9 KB（如果直接编码存档会到 14 KB，聊天软件会截断，所以另做了一套紧凑格式）。打开带 `#cfg=` 的链接后会自动清掉 hash，避免你后续改动被链接里的旧配置覆盖。
+
+配置写坏或浏览器存储满时会明确提示，不会静默丢；主存档读不出来会自动回退到上一次的备份。
 
 ---
 
@@ -104,33 +109,40 @@
 
 ```
 index.html                入口（12 个 script 标签，顺序即依赖）
+404.html                  自定义 404
+robots.txt                挡住内部目录（raw/ tools/ tests/ review/）
+manifest.json             PWA 清单（可「添加到主屏幕」）
+sw.js                     Service Worker：导航网络优先，资源缓存优先（离线可用）
+LICENSE                   代码 MIT；游戏数据版权归鹰角，不适用 MIT
 core/
   schema.js               属性注册表（唯一事实来源：key/label/别名/bucket/是否可结算/小数位）
   enums.js                职业 / 分支 / 稀有度 / 分类 / 编队上限（12）
   db/
     schema.js             表结构（唯一事实来源：表名/列/主键/索引/两类表）—— 见下节
-    db.js                 运行时查询引擎（装载产物、按主键/索引/条件查）
-    migrate.js            存档 v2 ↔ v3 转换（内存形状 ↔ 四张用户表）
+    db.js                 运行时查询引擎（装载产物、按主键/索引/条件查、install 用户表）
+    migrate.js            存档 v2 ↔ v3 转换 + 用户表 ↔ 运行时 DB（install / snapshot）
   repos/
-    operators.repo.js     干员数据访问：search / toCalcInput（信赖叠加、默认值）/ makeSquadEntry
+    operators.repo.js     干员数据访问：search / toCalcInput / makeSquadEntry / detail（阶段·技能·天赋·模组）
     relics.repo.js        藏品数据访问：index / filter / toSelection（relics ⨝ relic_stages）
     squads.repo.js        编队 CRUD + 12 人上限 + 去重 + 带版本号的序列化与校验
 data/
   is6db.js                表产物（自动生成，浏览器只读这一份）
   is6db.json              同一份内容的可读镜像，给工具链和 diff 用
   relics.json             藏品中间产物（构建脚本 → build_db.py）
-  operators.json          干员中间产物（构建脚本 → build_db.py）
+  operators.json          干员中间产物（扁平面板 + 嵌套的阶段/技能/天赋/模组 + 攻击范围）
   relics_wiki.json        PRTS 文案/元数据（中间产物，构建脚本会读）
   DB_CHANGELOG.md         每次重装表时自动追加的行数/数值变化
 js/
   effects.js              中文文案 → 修正项（官方数据覆盖不到时的兜底）
   engine.js               结算引擎（优先用官方结构化结果）
   app.js                  界面逻辑（只做 DOM，不做数值计算）
-assets/style.css          样式
-tools/                    数据生成脚本 + 一致性校验
+assets/
+  style.css               样式
+  icon.svg                图标（favicon / PWA 共用）
+tools/                    数据生成脚本 + 一致性校验 + release.py
 tests/                    自测
-deploy/                   部署用的响应头配置（Netlify / Vercel / nginx）
-raw/                      抓取缓存（wikitext、游戏数据表、分支映射）
+deploy/                   部署配置：_headers / vercel.json / nginx 片段 / FILES.txt
+raw/                      抓取缓存（wikitext、游戏数据表、分支映射），不进版本库
 ```
 
 分层依赖是**单向**的：`schema/enums → db/schema → is6db → db → effects/engine → repos → app`。
@@ -147,7 +159,7 @@ raw/                      抓取缓存（wikitext、游戏数据表、分支映�
 core/db/schema.js   ← 表结构唯一事实来源（DDL）
         │
         ├── tools/build_db.py   按同一份列定义把 JSON 装配成表
-        │        └── data/is6db.js   { meta, tables }（317 KB）
+        │        └── data/is6db.js   { meta, tables }（1550 KB）
         │
         └── core/db/db.js       装载 → Table（主键 O(1)、二级索引懒建、条件筛）
                  │
@@ -155,19 +167,26 @@ core/db/schema.js   ← 表结构唯一事实来源（DDL）
                  └── core/repos/*.repo.js 业务形状（界面只认仓储）
 ```
 
-### 七张表
+### 十三张表
 
 | 表 | 类型 | 主键 | 行数 | 说明 |
 | --- | --- | --- | --- | --- |
 | `relics` | 只读 | `id` | 251 | 藏品本体（名称/分类/稀有度/图标/描述/档位数） |
 | `relic_stages` | 只读 | `relicId` + `stage` | 290 | 每件藏品的每一档（文案 + `mods` 结构化修正项） |
-| `operators` | 只读 | `id` | 452 | 干员面板，`panel` 拍平成 `hp/atk/def/res/…` 列 |
+| `operators` | 只读 | `id` | 452 | 干员面板，`panel` 拍平成 `hp/atk/def/res/…` 列 + 特性/标签/潜能/范围 |
+| `operator_phases` | 只读 | `id` + `elite` | 1303 | 精英化零/一/二各满级一帧（面板成长曲线） |
+| `operator_skills` | 只读 | `id` + `slot` | 997 | 技能：类型 / SP / 持续 / 专三文案 / 范围 |
+| `operator_talents` | 只读 | `id` + `idx` | 650 | 天赋：名称 / 文案 / 解锁阶段 |
+| `operator_modules` | 只读 | `id` + `moduleId` | 901 | 模组：名称 / 类型 / 解锁条件 |
+| `operator_module_levels` | 只读 | `id` + `moduleId` + `level` | 1524 | 模组三档的属性加成与效果文案 |
+| `ranges` | 只读 | `id` | 55 | 攻击范围格子坐标 `[[row, col], …]` |
 | `selection` | 读写 | `relicId` | 用户 | 已选藏品 + 当前档位 + 层数 |
 | `squads` | 读写 | `id` | 用户 | 编队，`ord` 列保序（表本身无序） |
 | `presets` | 读写 | `name` | 用户 | 常用编队 |
 | `settings` | 读写 | `key` | 用户 | 战斗状态 / 伤害估算输入，一行一个参数 |
 
-三张 `game` 表随官方数据整体重建；四张 `user` 表只存在于浏览器本地，不进产物。
+九张 `game` 表随官方数据整体重建；四张 `user` 表只存在于浏览器本地，不进产物。
+**只有 user 表参与存档**，所以增删 game 表不影响存档格式，不用升版本号。
 
 几个刻意的决定：
 
@@ -177,6 +196,12 @@ core/db/schema.js   ← 表结构唯一事实来源（DDL）
 - **`settings` 一行一个参数**：以后加战斗状态不用改表结构，也不用改读取侧的判断。
 - **`operators` 拍平**：`panel` 嵌套对象拆成独立列，列名与 `core/schema.js` 的 `PANEL_FIELDS`
   一一对应，加面板字段时两处一起改（`check_enums.py` 会查）。
+- **干员详情拆成五张表**：阶段 / 技能 / 天赋 / 模组 / 模组档位都是「一名干员多行」，
+  塞进 `operators` 的 JSON 列就只能整块读，没法按 `elite`、按 `slot`、按 `level` 查，
+  也没法在装配期校验主键唯一。拆开之后每张表的主键都是 `(干员, 序号)`，重复直接报出来。
+- **模组档位的 `desc` 会留空**：与上一档文案相同时不重复写，读取侧回退到最近的非空档
+  （`OperatorRepo.modulesOf` 返回的已经是补全后的行）。三档文案完全相同的模组有 508 个，
+  不这么做产物要多 150 KB。
 
 ### 版本与更新
 
@@ -248,9 +273,19 @@ python tools/update_db.py              # 一条命令：抓 → 装表 → 校�
 ```powershell
 python tools/parse_relics.py           # PRTS 文案/元数据 → data/relics_wiki.json
 python tools/build_relics_official.py  # 官方 buffs + 上面的文案 → data/relics.json
-python tools/build_operators.py        # 干员面板 → data/operators.json
+python tools/build_operators.py        # 干员面板 + 阶段/技能/天赋/模组/范围 → data/operators.json
 python tools/build_db.py               # 两份 JSON → data/is6db.js（表产物 + 指纹 + changelog）
 ```
+
+`build_operators.py` 会按需下载并缓存 5 张官方表到 `raw/`：
+
+| 文件 | 取什么 |
+| --- | --- |
+| `character_table.json` | 三档精英化面板、信赖、特性、技能槽位、天赋、潜能、标签、范围 id |
+| `skill_table.json` | 技能名称、SP 类型、持续、每级文案（`{atk_scale:0%}` 占位符按 blackboard 填值） |
+| `uniequip_table.json` | 模组名称 / 类型 / 解锁条件 |
+| `battle_equip_table.json` | 模组三档的属性增量与效果文案 |
+| `range_table.json` | 攻击范围的格子坐标 |
 
 两个 `build_*.py` 默认只写 `.json`；加 `--legacy-js` 才会额外吐一份旧的
 `window.RELIC_DATA` / `window.OPERATOR_DATA` 文件（仅供调试比对，`index.html` 不加载）。
@@ -259,9 +294,10 @@ python tools/build_db.py               # 两份 JSON → data/is6db.js（表产�
 
 ```powershell
 node tests/engine.test.js              # 解析 + 结算 + 条件判定 + 作用域/费用回归 + 伤害估算（205 项断言）
-node tests/db.test.js                  # 表结构 / 产物自洽 / 版本护栏 / 存档往返 / v2 兼容（117 项断言）
-node tests/app.smoke.js                # 极简 DOM 桩跑界面渲染 / 分页 / 槽位条 / 网格选人 / 编队上限 / 汇总展开 / 导入容错 / 伤害卡 / 头像白名单 / 备份回退 / 写失败提示（153 项）
+node tests/db.test.js                  # 表结构 / 产物自洽 / 版本护栏 / 存档往返 / v2 兼容 / 用户表进运行时（189 项断言）
+node tests/app.smoke.js                # 极简 DOM 桩跑界面渲染 / 分页 / 槽位条 / 网格选人 / 编队上限 / 汇总展开 / 导入容错 / 伤害卡 / 头像白名单 / 备份回退 / 写失败提示 / Esc 与 aria / 分享链接 / 干员详情（185 项）
 python tools/check_enums.py            # 属性注册表、职业分支枚举、表结构（JS↔Python）、产物自洽、入口资源版本
+python tools/release.py --dry-run      # 发布前自检：以上全部 + 生成上传清单
 python tools/audit_relics.py           # 作用域 / 敌我 / 费用对象自检（当前 0 问题）
 python tools/audit_numbers.py          # 文案数字对账（剩余 18 处均为时长/半径/概率）
 python tools/verify_operators.py       # 用 PRTS 逐页抓的 24 名干员交叉校验内置面板
@@ -271,14 +307,22 @@ python tools/verify_operators.py       # 用 PRTS 逐页抓的 24 名干员交�
 JS 与 Python 两侧的职业/分支枚举没有漂移、每个声明「可结算」的属性在 `engine.js` 里真有结算分支、
 `core/db/schema.js` 与 `tools/build_db.py` 的表定义（表名/主键/列）完全一致、
 `data/is6db.json` 的列与行数和 `meta.counts` 对得上、源 JSON 不比产物新、
-`index.html` 的 13 个资源标签版本串一致且文件都在（部署前必跑）。
+`index.html` 里全部资源标签（当前 16 个）版本串一致且文件都在（部署前必跑）。
 
 ---
 
 ## 已知限制
 
 - 不含潜能、不含技能倍率（算的是「藏品 + 面板」静态结果，主动技能请自行叠加）。
-- **技能技力消耗不参与计算**：干员数据表里没有这个字段。相关藏品（如「支柱-勤奋」「开拓之手」）会出现在干员的「未计入面板」清单里并说明原因，不会假装生效。
+- **技能数据只用于展示，不参与计算**：`operator_skills` 里已经有技能类型、SP 消耗、持续、
+  专三文案和攻击范围，点编队卡上的「详情」能看到；但结算引擎仍然只吃面板，
+  技能倍率 / 持续时间没有接进伤害估算。相关藏品（如「支柱-勤奋」「开拓之手」）会出现在
+  干员的「未计入面板」清单里并说明原因，不会假装生效。
+- **「用此面板」只替换面板**：详情页可以把 E0 / E1 / E2 任意一档填进编队，
+  但编队条目不会记住「这是 E1」，重新打开后仍按存档里的具体数值算 —— 这是有意的，
+  玩家手改过的面板和官方面板在数据里长得一样，多存一个 `elite` 字段反而会产生两种真相。
+- **模组只展示属性加成，不参与计算**：`operator_module_levels` 里有三档的 hp/atk/def 增量，
+  但没有「玩家装了哪个模组」这个状态，所以不会自动加到面板上。
 - 「场上职业人数」用 `−` / `+` 步进器调（0 ~ 12），或点「按编队填充」一键按当前编队统计。
 - 「下一个招募/进阶的干员」类一次性藏品，只对勾了「一次性藏品指定此人」的干员生效。
 - 少数行为类藏品（浮空、弹药、距离增伤）不进面板，但会出现在「特殊效果」清单里，不会被静默丢掉。
@@ -286,23 +330,40 @@ JS 与 Python 两侧的职业/分支枚举没有漂移、每个声明「可结�
 - 层数上限对少数藏品是从文案「最多 N 层」推断的，官方数据里没有显式字段。
 - 「初始部署费用」（人偶之家 / 微缩舞台模型 / 缠梦古堡模型）是**局内开局的部署费用**，只进「探索 / 运营」，不改变任何干员的部署费用；「开启技能获得部署费用」（钝爪-先机）同理，是回费而非涨价。
 - 官方 selector 常常写成「八个职业全选」，实际范围由文案收在「地面 / 高台」上；这类藏品会用文案把作用域收紧到近战位 / 远程位（114、113、119、214 等）。
+- **没有干员立绘**：仓库里没有头像资源（452 名干员的 `avatar` 全为空），网格里用「职业简称 + 职业色」的色块代替。要上真实头像需要另找图源，并自行确认二次使用许可。
+- **37 件藏品无法量化**：招募概率、掉落、节点、结局条件、战术道具这类行为效果，不进面板，只列在「特殊效果」里。
+- `audit_numbers.py` 仍有 18 处文案数字没对上，全部是时长 / 半径 / 概率这类非面板属性，属于已知项。
 
 ---
 
 ## 部署给别人用
 
 页面是纯静态的：没有构建步骤、没有后端、没有外部资源（字体、CDN、统计脚本一个都没有），
-整个仓库直接传上去就能跑。但「本地能开」和「上线能用」之间隔着四件事：
+整个仓库直接传上去就能跑。但「本地能开」和「上线能用」之间隔着五件事。
+
+### 0. 一条命令发布
+
+```powershell
+python tools/release.py            # 版本串 +1 → 跑全部校验 → 生成上传清单
+python tools/release.py --dry-run  # 只校验，不改 index.html
+```
+
+它做三件事：把 `index.html` 里 16 处 `?v=` 统一 +1（`20261029a → 20261029b`）、
+依次跑 `build_db.py --check` / `check_enums.py` / 三套测试、最后生成 `deploy/FILES.txt`
+（21 个文件 / 1.8 MB，附响应头说明）。任一步失败会**还原 index.html**，不会留下半成品。
+
+`deploy/FILES.txt` 里那张表就是该传的东西 —— 刻意不含 `raw/`（52 MB 官方原始表）、
+`tools/`、`tests/`、`review/`、`AUDIT.md`。整包上传等于把抓取缓存和内部评审一起公开。
 
 ### 1. 缓存版本要一致
 
-`index.html` 里 13 个资源标签都带同一个 `?v=` 版本串（`assets/style.css?v=…` 与 12 个 `<script src=…?v=…>`）。
-原因是部署后 CDN 和浏览器会把旧文件缓存住，**代码更新而 `data/is6db.js` 还是旧版**（或反过来）
-会是最难排查的故障：界面能开，数值却对不上。
+`index.html` 里 16 个资源标签（1 个样式表 + 12 个脚本 + 图标 + apple-touch-icon + manifest）
+都带同一个 `?v=` 版本串。原因是部署后 CDN 和浏览器会把旧文件缓存住，**代码更新而
+`data/is6db.js` 还是旧版**（或反过来）会是最难排查的故障：界面能开，数值却对不上。
 
-发布前把 `index.html` 里的版本串统一改一处即可，`python tools/check_enums.py` 会校验：
+发布前跑 `python tools/release.py` 会自动统一改；`python tools/check_enums.py` 会校验：
 
-- 13 个标签是否都带了 `?v=`；
+- 16 个标签是否都带了 `?v=`；
 - 版本串是否**完全一致**（不一致 = 会新旧混跑）；
 - 引用的文件是否都在磁盘上（漏传文件是部署第一大事故）；
 - `tests/app.smoke.js` 的加载清单是否与 `index.html` 一致（否则测试通过、线上挂）。
@@ -325,7 +386,7 @@ JS 与 Python 两侧的职业/分支枚举没有漂移、每个声明「可结�
 
 ### 3. 压缩
 
-`data/is6db.js` 有 317 KB，gzip 后约 70 KB。托管平台默认开，自建服务器记得在 nginx 里
+`data/is6db.js` 有 1550 KB，gzip 后约 227 KB。托管平台默认开，自建服务器记得在 nginx 里
 `gzip_types` 加上 `application/javascript`，否则首次加载会明显慢一拍。
 
 ### 4. 加载失败要说人话
@@ -344,10 +405,25 @@ JS 与 Python 两侧的职业/分支枚举没有漂移、每个声明「可结�
 - 配额满 / 无痕模式导致写失败时明确弹提示（以前是 `catch` 完就静默吞掉）；
 - 另一个标签页保存了新存档时提示「本页再改动会覆盖它」，被覆盖的版本仍在备份键里。
 
-跨设备迁移靠「导出 / 导入」的 JSON，导出文件带 `schemaVersion`，旧格式导入会自动升级。
+跨设备迁移靠「导出 / 导入」的 JSON，导出文件带 `schemaVersion`，旧格式导入会自动升级；
+短配置也可以用「分享」按钮压进链接的 `#cfg=` 里。
 
 ---
 
-数据快照：**2026-10-28**（沉沦者的黑流树海「内容拓展·一」，251 件藏品 / 452 名干员）。
+## 可访问性与离线
+
+- **键盘**：页签是 `role="tab"` + `aria-selected`，网格卡片是 `role="button"` + `aria-pressed`
+  且可用 Tab 聚焦、Enter / 空格选中；`Esc` 关闭弹窗，关闭后焦点回到打开它的那个按钮。
+- **读屏**：卡片带可访问名（「玛恩纳，近卫，6 星，领主，未在编队」），提示条是
+  `role="status" aria-live="polite"`，弹窗是 `role="dialog" aria-modal="true"`。
+- **离线**：`sw.js` 在 http(s) 下注册。导航请求**网络优先**（避免被 SW 锁在旧版本里），
+  其余资源缓存优先；所有资源 URL 带 `?v=`，版本一变就是新 URL，不会串版本。
+  `file://` 下不注册（浏览器不允许），双击打开时行为与以前一致。
+- **主题**：目前只有深色。没有跟随系统切换。
+
+---
+
+数据快照：**2026-10-29**（沉沦者的黑流树海「内容拓展·一」，251 件藏品 / 452 名干员 /
+997 条技能 / 650 条天赋 / 901 个模组 / 55 种攻击范围）。
 本站为玩家二创工具，与鹰角网络及《明日方舟》官方无关。
 仅供个人计算参考，以游戏内表现为准。

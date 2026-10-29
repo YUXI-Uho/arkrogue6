@@ -42,8 +42,8 @@ function deep(a, b, msg) {
 // ---------------------------------------------------------------- 1. 表结构
 console.log('=== 1. 表结构定义 ===');
 ok(S.VERSION >= 3, 'DBSchema.VERSION = ' + S.VERSION);
-eq(S.NAMES.length, 7, '共 7 张表');
-eq(S.GAME_TABLES.length, 3, '官方数据表 3 张（relics / relic_stages / operators）');
+eq(S.NAMES.length, 13, '共 13 张表');
+eq(S.GAME_TABLES.length, 9, '官方数据表 9 张（藏品 2 + 干员 6 + 攻击范围 1）');
 eq(S.USER_TABLES.length, 4, '用户表 4 张（selection / squads / presets / settings）');
 ok(S.GAME_TABLES.concat(S.USER_TABLES).length === S.NAMES.length, '两张清单不重不漏');
 
@@ -99,6 +99,61 @@ S.GAME_TABLES.forEach(name => {
 ok(DB.table('relics').count() >= 251, '藏品 ≥ 251（实际 ' + DB.table('relics').count() + '）');
 ok(DB.table('relic_stages').count() >= 251, '藏品档位 ≥ 251（实际 ' + DB.table('relic_stages').count() + '）');
 ok(DB.table('operators').count() >= 450, '干员 ≥ 450（实际 ' + DB.table('operators').count() + '）');
+
+// ---- 干员详情五张表：行数下限 + 与主表的外键完整性 ----
+ok(DB.table('operator_phases').count() >= 1300,
+   '精英化面板 ≥ 1300（实际 ' + DB.table('operator_phases').count() + '）');
+ok(DB.table('operator_skills').count() >= 990,
+   '技能 ≥ 990（实际 ' + DB.table('operator_skills').count() + '）');
+ok(DB.table('operator_talents').count() >= 600,
+   '天赋 ≥ 600（实际 ' + DB.table('operator_talents').count() + '，已剔除空占位槽）');
+ok(DB.table('operator_modules').count() >= 890,
+   '模组 ≥ 890（实际 ' + DB.table('operator_modules').count() + '）');
+ok(DB.table('operator_module_levels').count() >= 1500,
+   '模组档位 ≥ 1500（实际 ' + DB.table('operator_module_levels').count() + '）');
+ok(DB.table('ranges').count() >= 50, '攻击范围 ≥ 50（实际 ' + DB.table('ranges').count() + '）');
+
+const opIds = new Set(DB.table('operators').all().map(o => o.id));
+['operator_phases', 'operator_skills', 'operator_talents', 'operator_modules'].forEach(name => {
+  const orphan = DB.table(name).all().filter(r => !opIds.has(r.id));
+  ok(orphan.length === 0, name + ' 没有指向不存在干员的行',
+     orphan.length ? '首个：' + orphan[0].id : '');
+});
+
+const phaseIds = new Set(DB.table('operator_phases').all().map(r => r.id));
+const noPhase = [...opIds].filter(id => !phaseIds.has(id));
+ok(noPhase.length === 0, '每名干员都至少有一档精英化面板',
+   noPhase.length ? noPhase.slice(0, 3).join(',') : '');
+
+const modIds = new Set(DB.table('operator_modules').all().map(r => r.id + '\u0001' + r.moduleId));
+const orphanLevel = DB.table('operator_module_levels').all()
+  .filter(r => !modIds.has(r.id + '\u0001' + r.moduleId));
+ok(orphanLevel.length === 0, '模组档位都能找到所属模组');
+
+// 攻击范围：干员 / 阶段 / 技能引用的 id 必须都在 ranges 表里
+const rangeIds = new Set(DB.table('ranges').all().map(r => r.id));
+const refs = []
+  .concat(DB.table('operators').all().map(r => r.rangeId))
+  .concat(DB.table('operator_phases').all().map(r => r.rangeId))
+  .concat(DB.table('operator_skills').all().map(r => r.rangeId))
+  .filter(Boolean);
+const missingRange = [...new Set(refs)].filter(id => !rangeIds.has(id));
+ok(missingRange.length === 0, '引用的攻击范围都在 ranges 表里',
+   missingRange.slice(0, 5).join(','));
+ok(DB.table('ranges').all().every(r => Array.isArray(r.grids) &&
+   r.grids.every(g => Array.isArray(g) && g.length === 2)),
+   '攻击范围的 grids 是 [[row, col], ...]');
+
+// 干员表的最高档面板必须等于 operator_phases 里同 elite 的那一行
+const opRows = DB.table('operators').all();
+const phaseIdx = {};
+DB.table('operator_phases').all().forEach(p => { phaseIdx[p.id + '\u0001' + p.elite] = p; });
+const mismatch = opRows.filter(o => {
+  const p = phaseIdx[o.id + '\u0001' + o.elite];
+  return p && (p.hp !== o.hp || p.atk !== o.atk || p.def !== o.def || p.cost !== o.cost);
+});
+ok(mismatch.length === 0, '干员表的 hp/atk/def/cost 与最高档阶段面板一致',
+   mismatch.length ? mismatch[0].name : '');
 
 // ---------------------------------------------------------------- 3. 查询
 console.log('=== 3. 查询 ===');

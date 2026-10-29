@@ -672,9 +672,80 @@ ok(Number($('dmgAtk').value) > 0, '选干员后攻击力被填入：' + $('dmgAt
   ok($('modalBody').children.length > 0, '公式说明弹窗有内容');
   // 数据版本块：用户反馈数值问题时靠它确认双方看的是不是同一份数据
   const metaBox = $('modalBody').children.filter(c => String(c.className).indexOf('data-meta') >= 0)[0];
-  ok(!!metaBox && metaBox.children.length >= 8, '公式说明里有数据版本块（' + (metaBox ? metaBox.children.length : 0) + ' 格）');
+  ok(!!metaBox && metaBox.children.length >= 12, '公式说明里有数据版本块（' + (metaBox ? metaBox.children.length : 0) + ' 格）');
+  // 构建时间在数据里存的是 UTC（…Z），直接显示会比本地时钟差几小时
+  const metaVals = metaBox.children
+    .filter(c => String(c.className).indexOf('data-meta-v') >= 0)
+    .map(c => String(c.textContent));
+  const built = metaVals.filter(v => v.indexOf('（本地）') >= 0)[0];
+  ok(!!built && !/Z$/.test(built), '构建时间已转成本地时区：' + (built || '(缺失)'));
   $('btnExport').click();
   ok($('modalBody').children.length > 0, '导出弹窗有内容');
+
+  console.log('=== 干员详情（精英化 / 技能 / 天赋 / 模组 / 范围） ===');
+  // 回归：operators 表把 favor 拍成了 favorHp/favorAtk/favorDef 三列，
+  // makeSquadEntry 只认嵌套的 favor 时信赖会静默变成 0（面板整体偏低且勾选框不显示）。
+  const yh = window.OperatorRepo.getByName('银灰');
+  const yEntry = window.OperatorRepo.makeSquadEntry(yh);
+  ok(yEntry.favor.atk === yh.favorAtk && yEntry.favor.atk > 0,
+     'makeSquadEntry 从拍平的 favorAtk 列读到信赖（' + yEntry.favor.atk + '）');
+  const yCalc = window.OperatorRepo.toCalcInput(yEntry);
+  ok(yCalc.panel.atk === yh.atk + yh.favorAtk,
+     'toCalcInput 叠加信赖后攻击力 ' + yh.atk + '→' + yCalc.panel.atk);
+  ok(yCalc.panel.def === yh.def + yh.favorDef,
+     'toCalcInput 叠加信赖后防御力 ' + yh.def + '→' + yCalc.panel.def);
+
+  const walk = (node, pred, out) => {
+    out = out || [];
+    (node.children || []).forEach(c => {
+      if (pred(c)) out.push(c);
+      walk(c, pred, out);
+    });
+    return out;
+  };
+  $('btnReset').click();
+  tiles()[0].click();
+  await sleep(260);
+  const detailBtn = () => walk(cards()[0], c => c.textContent === '详情')[0];
+  ok(!!detailBtn(), '编队卡上有「详情」按钮');
+  detailBtn().click();
+
+  const dB = $('modalBody');
+  const dTitle = dB.children.filter(c => c.tagName === 'H2')[0];
+  ok(!!dTitle && /★/.test(dTitle.textContent), '详情标题带星级：' + (dTitle && dTitle.textContent));
+  const sections = dB.children.filter(c => c.tagName === 'H3').map(c => c.textContent);
+  ok(sections.indexOf('精英化面板') >= 0, '有「精英化面板」小节');
+  ok(sections.indexOf('技能') >= 0, '有「技能」小节');
+  ok(sections.indexOf('天赋') >= 0, '有「天赋」小节');
+  ok(sections.some(t => /攻击范围/.test(t)), '有「攻击范围」小节');
+
+  const phaseRows = walk(dB, c => c.tagName === 'TR');
+  ok(phaseRows.length >= 4, '精英化表至少有表头 + 3 行（实际 ' + phaseRows.length + ' 行）');
+  const useBtns = walk(dB, c => c.textContent === '用此面板');
+  ok(useBtns.length === 3, '三档各有一个「用此面板」按钮（实际 ' + useBtns.length + '）');
+
+  const cells = walk(dB, c => String(c.className).indexOf('range-cell') >= 0);
+  ok(cells.length >= 1, '攻击范围画出了格子（' + cells.length + ' 格）');
+  ok(cells.filter(c => c.classList.contains('self')).length === 1, '攻击范围里有且只有一格是「自己」');
+
+  // 点「用此面板」应把该档面板写进编队
+  const panelOf = () => JSON.stringify(savedSquads()[0].panel);
+  const firstUse = useBtns[0];
+  const panelBefore = panelOf();
+  firstUse.click();
+  await sleep(260);
+  ok($('modal').classList.contains('hidden'), '用完此面板后弹窗关闭');
+  const panelAfter = panelOf();
+  ok(panelBefore !== panelAfter, 'E0 面板与默认 E2 面板不同，确实被替换了');
+  ok(/面板/.test($('toast').textContent), '提示已换面板：' + $('toast').textContent);
+
+  // 手动改过名字的干员在图鉴里查不到，不能崩
+  const nameIn = cards()[0].children[0].children[0];
+  nameIn.value = '不存在的干员';
+  nameIn.oninput();
+  detailBtn().click();
+  ok(/图鉴里没有/.test($('toast').textContent), '查不到的干员给出提示而不是白屏：' + $('toast').textContent);
+  $('modalClose').click();
 
   console.log('=== 头像白名单（存档可被粘贴，不能带外链） ===');
   const avatarOf = v => {

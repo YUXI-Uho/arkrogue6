@@ -1,5 +1,5 @@
 {
-  "_comment": "Vercel 部署配置：把本文件放到仓库根目录。与 deploy/_headers 等价，只是格式不同。",
+  "_comment": "Vercel 部署配置：把本文件放到仓库根目录。与 deploy/_headers 语义等价，只是格式不同。",
   "headers": [
     {
       "source": "/(.*)",
@@ -15,7 +15,25 @@
       ]
     },
     {
-      "source": "/index.html",
+      "source": "/",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/(.*).html",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/manifest.json",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
       ]
@@ -28,6 +46,12 @@
     },
     {
       "source": "/(.*).css",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*).svg",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]

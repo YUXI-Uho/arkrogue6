@@ -12,8 +12,11 @@
  *   比对两边有没有漂移。
  *
  * 两类表：
- *   game  只读，随官方数据更新而整体重建（relics / relic_stages / operators）
- *   user  读写，来自玩家操作，持久化在浏览器本地（selection / squads / presets / settings）
+ *   game  只读，随官方数据更新而整体重建
+ *         relics / relic_stages / operators / operator_phases / operator_skills /
+ *         operator_talents / operator_modules / operator_module_levels / ranges
+ *   user  读写，来自玩家操作，持久化在浏览器本地
+ *         selection / squads / presets / settings
  *
  * 列类型（仅用于装配期校验，运行时是 JS 值，不做强制转换）
  *   text / int / real / bool / json
@@ -35,6 +38,8 @@
 
   // 改这里 = 改存档版本。加列不算破坏性变更（读取侧会补默认值），
   // 删列 / 改语义才需要升版本并在 core/db/migrate.js 里加一条迁移。
+  // 注意：只有 user 表（selection / squads / presets / settings）参与存档，
+  // game 表随官方数据整体重建，增减它们不影响存档格式，不用升版本。
   var VERSION = 3;
 
   var TABLES = {
@@ -81,6 +86,8 @@
     // ---------------- 只读：干员 ----------------
     // 面板从嵌套的 panel 对象拆成独立列：面板字段由 core/schema.js 的
     // PANEL_FIELDS 定义，列名与之一一对应，加字段时两边一起改（check_enums 会查）。
+    // 这里的 hp/atk/... 是「最高精英化 + 满级 + 不含信赖」那一档，供计算直接取用；
+    // 三档面板在 operator_phases 里，详情页按阶段切换。
     operators: {
       kind: 'game',
       title: '干员',
@@ -107,9 +114,141 @@
         redeploy: 'int',
         favorHp: 'int',
         favorAtk: 'int',
-        favorDef: 'int'
+        favorDef: 'int',
+        // ---- 以下只给详情页 / 检索用，计算链路不读 ----
+        displayNumber: 'text',   // 图鉴编号
+        appellation: 'text',     // 英文名
+        obtain: 'text',          // 获取途径
+        tags: 'json',            // ['输出','支援']
+        trait: 'text',           // 职业特性文案
+        rangeId: 'text',         // 最高阶段攻击范围 id → ranges
+        potential: 'json'        // 潜能描述（5 条）
       },
       indexes: ['name', 'profession', 'rarity']
+    },
+
+    // ---------------- 只读：精英化阶段面板（一名干员多行） ----------------
+    // E0 / E1 / E2 各一行，取该阶段满级那一帧。计算默认用 operators 表的最高档，
+    // 详情页则靠这张表展示成长曲线，也方便以后做「按精英化阶段换算」。
+    operator_phases: {
+      kind: 'game',
+      title: '干员精英化面板',
+      pk: ['id', 'elite'],
+      columns: {
+        id: 'text',
+        elite: 'int',
+        level: 'int',
+        hp: 'int',
+        atk: 'int',
+        def: 'int',
+        res: 'int',
+        aspd: 'int',
+        interval: 'real',
+        cost: 'int',
+        block: 'int',
+        redeploy: 'int',
+        rangeId: 'text'
+      },
+      indexes: ['id']
+    },
+
+    // ---------------- 只读：干员技能（一名干员最多 3 行） ----------------
+    // 数值取专三（10 级表的最后一档），另留一份 7 级 SP 消耗用于对比。
+    // 文案里的 {key:0%} 占位符已在生成阶段按 blackboard 填好。
+    operator_skills: {
+      kind: 'game',
+      title: '干员技能',
+      pk: ['id', 'slot'],
+      columns: {
+        id: 'text',
+        slot: 'int',
+        skillId: 'text',
+        name: 'text',
+        chargeType: 'text',      // 自动回复 / 攻击回复 / 受击回复
+        activation: 'text',      // 自动触发 / 手动触发 / 被动
+        duration: 'real',
+        spCost: 'int',
+        initSp: 'int',
+        spCost7: 'int',
+        initSp7: 'int',
+        desc: 'text',
+        rangeId: 'text',
+        maxLevel: 'int',
+        unlockElite: 'int'       // 槽位 1/2/3 = E0/E1/E2
+      },
+      indexes: ['id', 'skillId']
+    },
+
+    // ---------------- 只读：干员天赋 ----------------
+    // 每个天赋槽位只留「最高阶段 + 无潜能要求」那一版，潜能版本不重复入库。
+    operator_talents: {
+      kind: 'game',
+      title: '干员天赋',
+      pk: ['id', 'idx'],
+      columns: {
+        id: 'text',
+        idx: 'int',
+        name: 'text',
+        desc: 'text',
+        unlockElite: 'int',
+        unlockLevel: 'int'
+      },
+      indexes: ['id']
+    },
+
+    // ---------------- 只读：干员模组 ----------------
+    // 模组本身（名称/类型/解锁条件）与三档加成拆成两张表：档位是可枚举的，
+    // 塞进 JSON 数组就没法按等级查，也没法和 operators 的列对齐做校验。
+    operator_modules: {
+      kind: 'game',
+      title: '干员模组',
+      pk: ['id', 'moduleId'],
+      columns: {
+        id: 'text',
+        moduleId: 'text',
+        name: 'text',
+        type: 'text',            // INITIAL / ADVANCED / UNIQUE
+        typeName: 'text',
+        unlockElite: 'int',
+        unlockLevel: 'int'
+      },
+      indexes: ['id']
+    },
+
+    operator_module_levels: {
+      kind: 'game',
+      title: '模组档位',
+      pk: ['id', 'moduleId', 'level'],
+      columns: {
+        id: 'text',
+        moduleId: 'text',
+        level: 'int',
+        hp: 'int',
+        atk: 'int',
+        def: 'int',
+        res: 'int',
+        aspd: 'int',
+        interval: 'real',
+        cost: 'int',
+        block: 'int',
+        redeploy: 'int',
+        desc: 'text'             // 与上一档相同则留空，读取侧回退到最近的非空档
+      },
+      indexes: ['id', 'moduleId']
+    },
+
+    // ---------------- 只读：攻击范围 ----------------
+    // 73 种范围全表只有几 KB，直接存格子坐标，界面上画成网格。
+    ranges: {
+      kind: 'game',
+      title: '攻击范围',
+      pk: 'id',
+      columns: {
+        id: 'text',
+        direction: 'int',
+        grids: 'json'            // [[row, col], ...]
+      },
+      indexes: []
     },
 
     // ---------------- 用户：已选藏品 ----------------

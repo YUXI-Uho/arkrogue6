@@ -10,6 +10,9 @@ __pycache__/
 .tmpcheck/
 .shots/
 *.tmp
+# 截图与 iframe 包装页的一次性产物（根目录下划线开头）
+_*.png
+_tmp_*.html
 
 # 系统
 .DS_Store

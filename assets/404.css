@@ -1,0 +1,15 @@
+/* 404 页专用样式。
+   单独成文件是为了让 404.html 里没有任何内联样式 —— 部署配置里的 CSP 是
+   style-src 'self'，内联 <style> 会被浏览器直接拦掉，404 页会变成无样式纯文本。 */
+:root { --bg:#0d1114; --panel:#172026; --line:#2a3740; --text:#dce6ec; --muted:#8a9aa6; --accent:#4fd1c5; }
+html, body {
+  margin: 0; padding: 0; background: var(--bg); color: var(--text);
+  font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 14px; line-height: 1.6;
+}
+.wrap { max-width: 520px; margin: 16vh auto 0; padding: 0 20px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+p { color: var(--muted); margin: 0 0 14px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.code { font-family: Consolas, monospace; color: var(--accent); }

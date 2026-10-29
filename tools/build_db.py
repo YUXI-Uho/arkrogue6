@@ -46,6 +46,30 @@ TABLE_SPEC = {
         "elite", "level", "hp", "atk", "def", "res", "aspd", "interval",
         "block", "cost", "spRecover", "initSp", "redeploy",
         "favorHp", "favorAtk", "favorDef",
+        "displayNumber", "appellation", "obtain", "tags", "trait",
+        "rangeId", "potential",
+    ]),
+    "operator_phases": (["id", "elite"], [
+        "id", "elite", "level", "hp", "atk", "def", "res", "aspd",
+        "interval", "cost", "block", "redeploy", "rangeId",
+    ]),
+    "operator_skills": (["id", "slot"], [
+        "id", "slot", "skillId", "name", "chargeType", "activation",
+        "duration", "spCost", "initSp", "spCost7", "initSp7", "desc",
+        "rangeId", "maxLevel", "unlockElite",
+    ]),
+    "operator_talents": (["id", "idx"], [
+        "id", "idx", "name", "desc", "unlockElite", "unlockLevel",
+    ]),
+    "operator_modules": (["id", "moduleId"], [
+        "id", "moduleId", "name", "type", "typeName", "unlockElite", "unlockLevel",
+    ]),
+    "operator_module_levels": (["id", "moduleId", "level"], [
+        "id", "moduleId", "level", "hp", "atk", "def", "res", "aspd",
+        "interval", "cost", "block", "redeploy", "desc",
+    ]),
+    "ranges": ("id", [
+        "id", "direction", "grids",
     ]),
 }
 
@@ -111,6 +135,7 @@ def build_operators(src):
     rows = []
     for o in src:
         fav = o.get("favor") or {}
+        det = o.get("detail") or {}
         rows.append({
             "id": o.get("id", ""),
             "name": o.get("name", ""),
@@ -134,6 +159,130 @@ def build_operators(src):
             "favorHp": as_int(fav.get("hp")),
             "favorAtk": as_int(fav.get("atk")),
             "favorDef": as_int(fav.get("def")),
+            "displayNumber": det.get("displayNumber", ""),
+            "appellation": det.get("appellation", ""),
+            "obtain": det.get("obtain", ""),
+            "tags": det.get("tags") or [],
+            "trait": det.get("trait", ""),
+            "rangeId": det.get("rangeId", ""),
+            "potential": det.get("potential") or [],
+        })
+    return rows
+
+
+def build_operator_phases(src):
+    rows = []
+    for o in src:
+        oid = o.get("id", "")
+        for p in (o.get("detail") or {}).get("phases") or []:
+            rows.append({
+                "id": oid,
+                "elite": as_int(p.get("elite")),
+                "level": as_int(p.get("level")),
+                "hp": as_int(p.get("hp")),
+                "atk": as_int(p.get("atk")),
+                "def": as_int(p.get("def")),
+                "res": as_int(p.get("res")),
+                "aspd": as_int(p.get("aspd"), 100) or 100,
+                "interval": as_real(p.get("interval"), 1.0) or 1.0,
+                "cost": as_int(p.get("cost")),
+                "block": as_int(p.get("block")),
+                "redeploy": as_int(p.get("redeploy"), 70) or 70,
+                "rangeId": p.get("rangeId", ""),
+            })
+    return rows
+
+
+def build_operator_skills(src):
+    rows = []
+    for o in src:
+        oid = o.get("id", "")
+        for s in (o.get("detail") or {}).get("skills") or []:
+            rows.append({
+                "id": oid,
+                "slot": as_int(s.get("slot")),
+                "skillId": s.get("skillId", ""),
+                "name": s.get("name", ""),
+                "chargeType": s.get("chargeType", ""),
+                "activation": s.get("activation", ""),
+                "duration": as_real(s.get("duration")),
+                "spCost": as_int(s.get("spCost")),
+                "initSp": as_int(s.get("initSp")),
+                "spCost7": as_int(s.get("spCost7")),
+                "initSp7": as_int(s.get("initSp7")),
+                "desc": s.get("desc", ""),
+                "rangeId": s.get("rangeId", ""),
+                "maxLevel": as_int(s.get("maxLevel")),
+                "unlockElite": as_int(s.get("unlockElite")),
+            })
+    return rows
+
+
+def build_operator_talents(src):
+    rows = []
+    for o in src:
+        oid = o.get("id", "")
+        for t in (o.get("detail") or {}).get("talents") or []:
+            rows.append({
+                "id": oid,
+                "idx": as_int(t.get("idx")),
+                "name": t.get("name", ""),
+                "desc": t.get("desc", ""),
+                "unlockElite": as_int(t.get("unlockElite")),
+                "unlockLevel": as_int(t.get("unlockLevel"), 1),
+            })
+    return rows
+
+
+def build_operator_modules(src):
+    rows = []
+    for o in src:
+        oid = o.get("id", "")
+        for m in (o.get("detail") or {}).get("modules") or []:
+            rows.append({
+                "id": oid,
+                "moduleId": m.get("moduleId", ""),
+                "name": m.get("name", ""),
+                "type": m.get("type", ""),
+                "typeName": m.get("typeName", ""),
+                "unlockElite": as_int(m.get("unlockElite")),
+                "unlockLevel": as_int(m.get("unlockLevel")),
+            })
+    return rows
+
+
+def build_module_levels(src):
+    rows = []
+    for o in src:
+        oid = o.get("id", "")
+        for m in (o.get("detail") or {}).get("modules") or []:
+            mid = m.get("moduleId", "")
+            for lv in m.get("levels") or []:
+                rows.append({
+                    "id": oid,
+                    "moduleId": mid,
+                    "level": as_int(lv.get("level")),
+                    "hp": as_int(lv.get("hp")),
+                    "atk": as_int(lv.get("atk")),
+                    "def": as_int(lv.get("def")),
+                    "res": as_int(lv.get("res")),
+                    "aspd": as_int(lv.get("aspd")),
+                    "interval": as_real(lv.get("interval")),
+                    "cost": as_int(lv.get("cost")),
+                    "block": as_int(lv.get("block")),
+                    "redeploy": as_int(lv.get("redeploy")),
+                    "desc": lv.get("desc", ""),
+                })
+    return rows
+
+
+def build_ranges(src):
+    rows = []
+    for r in src:
+        rows.append({
+            "id": r.get("id", ""),
+            "direction": as_int(r.get("direction")),
+            "grids": r.get("grids") or [],
         })
     return rows
 
@@ -219,22 +368,31 @@ def main():
     check_only = "--check" in sys.argv
 
     relics_src = load_json("relics.json")
-    ops_src = load_json("operators.json")
+    ops_doc = load_json("operators.json")
+    # operators.json 是 {operators, ranges}：干员与攻击范围一起生成，范围是干员的依赖
+    ops_src = ops_doc.get("operators") or []
+    ranges_src = ops_doc.get("ranges") or []
 
     tables = {
         "relics": build_relics(relics_src),
         "relic_stages": build_stages(relics_src),
         "operators": build_operators(ops_src),
+        "operator_phases": build_operator_phases(ops_src),
+        "operator_skills": build_operator_skills(ops_src),
+        "operator_talents": build_operator_talents(ops_src),
+        "operator_modules": build_operator_modules(ops_src),
+        "operator_module_levels": build_module_levels(ops_src),
+        "ranges": build_ranges(ranges_src),
     }
 
     counts = {}
-    for name, rows in tables.items():
-        counts[name] = validate(name, rows)
+    for name in TABLE_SPEC:
+        if name not in tables:
+            raise SystemExit("TABLE_SPEC 声明了 %s，但没有对应的装配函数" % name)
+        counts[name] = validate(name, tables[name])
 
     data_hash = fingerprint([
-        json.dumps(tables["relics"], ensure_ascii=False, sort_keys=True),
-        json.dumps(tables["relic_stages"], ensure_ascii=False, sort_keys=True),
-        json.dumps(tables["operators"], ensure_ascii=False, sort_keys=True),
+        json.dumps(tables[name], ensure_ascii=False, sort_keys=True) for name in TABLE_SPEC
     ])
 
     artifact = {
@@ -246,7 +404,8 @@ def main():
             "builtAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "source": {
                 "relics": "data/relics.json ← tools/build_relics_official.py ← raw/roguelike_topic_table.json",
-                "operators": "data/operators.json ← tools/build_operators.py ← raw/character_table.json",
+                "operators": "data/operators.json ← tools/build_operators.py ← raw/character_table.json、"
+                             "skill_table.json、uniequip_table.json、battle_equip_table.json、range_table.json",
             },
             "counts": counts,
         },

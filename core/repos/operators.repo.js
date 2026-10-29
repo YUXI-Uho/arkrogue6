@@ -20,6 +20,15 @@
  *   OperatorRepo.makeSquadEntry(entry)      内置干员 → 编队条目
  *   OperatorRepo.makeBlankEntry(squad)      空白干员（squad 用于生成不重名的默认名字）
  *   OperatorRepo.defaultPanel()             空白面板（按 ArkSchema.PANEL_FIELDS 生成）
+ *
+ * 详情（精英化 / 技能 / 天赋 / 模组 / 攻击范围）
+ *   OperatorRepo.detail(idOrName)           合并后的完整干员，缺的键给空数组
+ *   OperatorRepo.phasesOf(id)               三档面板，按 elite 升序
+ *   OperatorRepo.skillsOf(id)               技能，按 slot 升序
+ *   OperatorRepo.talentsOf(id)              天赋，按 idx 升序
+ *   OperatorRepo.modulesOf(id)              模组（含三档加成与效果文案）
+ *   OperatorRepo.rangeOf(rangeId)           {id, direction, grids:[[row,col]]}
+ *   OperatorRepo.panelAt(id, elite)         某个精英化阶段的扁平面板（给「按此阶段填入」用）
  * ==========================================================================*/
 (function (global) {
   'use strict';
@@ -32,9 +41,21 @@
 
   var list = [];
   var byName = Object.create(null);
+  var byId = Object.create(null);
+  // 详情四张表按干员 id 分组：装载时一次建好，详情页打开时不再扫全表
+  var phasesOf = Object.create(null);
+  var skillsOf = Object.create(null);
+  var talentsOf = Object.create(null);
+  var modulesOf = Object.create(null);
+  var moduleLevels = Object.create(null);
+  var rangeById = Object.create(null);
 
   function num(v) { return (v === '' || v == null || isNaN(v)) ? 0 : +v; }
   function uid() { return 'op_' + Math.random().toString(36).slice(2, 8); }
+
+  function push(map, key, row) {
+    (map[key] || (map[key] = [])).push(row);
+  }
 
   // ---------- 数据装载 ----------
   function init(db) {
@@ -46,15 +67,114 @@
     // flatPanel() 按 PANEL_FIELDS 逐列取值，不需要再拆嵌套。
     list = D.table('operators').all();
     byName = Object.create(null);
+    byId = Object.create(null);
+    phasesOf = Object.create(null);
+    skillsOf = Object.create(null);
+    talentsOf = Object.create(null);
+    modulesOf = Object.create(null);
+    moduleLevels = Object.create(null);
+    rangeById = Object.create(null);
+
     list.forEach(function (o) {
-      if (o && o.name) byName[o.name] = o;
+      if (!o) return;
+      if (o.name) byName[o.name] = o;
+      if (o.id) byId[o.id] = o;
     });
+
+    if (D.has('operator_phases')) {
+      D.table('operator_phases').all().forEach(function (r) { push(phasesOf, r.id, r); });
+      Object.keys(phasesOf).forEach(function (k) {
+        phasesOf[k].sort(function (a, b) { return num(a.elite) - num(b.elite); });
+      });
+    }
+    if (D.has('operator_skills')) {
+      D.table('operator_skills').all().forEach(function (r) { push(skillsOf, r.id, r); });
+      Object.keys(skillsOf).forEach(function (k) {
+        skillsOf[k].sort(function (a, b) { return num(a.slot) - num(b.slot); });
+      });
+    }
+    if (D.has('operator_talents')) {
+      D.table('operator_talents').all().forEach(function (r) { push(talentsOf, r.id, r); });
+      Object.keys(talentsOf).forEach(function (k) {
+        talentsOf[k].sort(function (a, b) { return num(a.idx) - num(b.idx); });
+      });
+    }
+    if (D.has('operator_module_levels')) {
+      D.table('operator_module_levels').all().forEach(function (r) {
+        push(moduleLevels, r.id + '\u0001' + r.moduleId, r);
+      });
+      Object.keys(moduleLevels).forEach(function (k) {
+        moduleLevels[k].sort(function (a, b) { return num(a.level) - num(b.level); });
+      });
+    }
+    if (D.has('operator_modules')) {
+      D.table('operator_modules').all().forEach(function (r) {
+        var row = {};
+        Object.keys(r).forEach(function (k) { row[k] = r[k]; });
+        row.levels = moduleLevels[r.id + '\u0001' + r.moduleId] || [];
+        push(modulesOf, r.id, row);
+      });
+    }
+    if (D.has('ranges')) {
+      D.table('ranges').all().forEach(function (r) { rangeById[r.id] = r; });
+    }
     return list.length;
   }
 
   function all() { return list.slice(); }
 
   function getByName(name) { return byName[name] || null; }
+
+  // ---------- 详情 ----------
+  // 详情页可以按 id 也可以按名字打开：编队里存的是名字（玩家可改），
+  // 图鉴里拿得到 id，两个入口都要能走通。
+  function resolve(ref) {
+    if (!ref) return null;
+    if (typeof ref === 'object') return ref.id ? (byId[ref.id] || null) : null;
+    return byId[ref] || byName[ref] || null;
+  }
+
+  function phasesOfOp(ref) {
+    var o = resolve(ref);
+    return o ? (phasesOf[o.id] || []).slice() : [];
+  }
+  function skillsOfOp(ref) {
+    var o = resolve(ref);
+    return o ? (skillsOf[o.id] || []).slice() : [];
+  }
+  function talentsOfOp(ref) {
+    var o = resolve(ref);
+    return o ? (talentsOf[o.id] || []).slice() : [];
+  }
+  function modulesOfOp(ref) {
+    var o = resolve(ref);
+    return o ? (modulesOf[o.id] || []).slice() : [];
+  }
+
+  function rangeOf(rangeId) { return rangeById[rangeId] || null; }
+
+  function detail(ref) {
+    var o = resolve(ref);
+    if (!o) return null;
+    var out = {};
+    Object.keys(o).forEach(function (k) { out[k] = o[k]; });
+    out.phases = phasesOfOp(o);
+    out.skills = skillsOfOp(o);
+    out.talents = talentsOfOp(o);
+    out.modules = modulesOfOp(o);
+    out.range = rangeOf(o.rangeId);
+    return out;
+  }
+
+  // 某个精英化阶段的扁平面板 —— 详情页的「按此阶段填入编队」用它，
+  // 让玩家能拿 E1 面板去算，而不用手抄一遍数值。
+  function panelAt(ref, elite) {
+    var rows = phasesOfOp(ref);
+    var hit = null;
+    rows.forEach(function (r) { if (num(r.elite) === num(elite)) hit = r; });
+    if (!hit) return null;
+    return flatPanel(hit);
+  }
 
   // ---------- 检索 ----------
   // rarity 语义：'' / null 不过滤；6 精确；'4-' 表示 4 星及以下
@@ -133,8 +253,24 @@
     };
   }
 
-  function makeSquadEntry(entry) {
+  // 信赖加成两种来源都要认：
+  //   operators 表是拍平的列（favorHp/favorAtk/favorDef）
+  //   旧格式/预设里是嵌套的 favor:{hp,atk,def}
+  // 只读 src.favor 会让「从表里拿到的干员」信赖恒为 0 —— 面板整体偏低且勾选框不显示。
+  function favorOf(src) {
+    if (src && src.favor && typeof src.favor === 'object') {
+      return { hp: num(src.favor.hp), atk: num(src.favor.atk), def: num(src.favor.def) };
+    }
+    if (src && (src.favorHp != null || src.favorAtk != null || src.favorDef != null)) {
+      return { hp: num(src.favorHp), atk: num(src.favorAtk), def: num(src.favorDef) };
+    }
+    return null;
+  }
+
+  // panel 可传：详情页「按此精英化阶段填入」时用该阶段的面板，不传就用最高档
+  function makeSquadEntry(entry, panel) {
     var src = entry || {};
+    var fav = favorOf(src);
     return {
       id: uid(),
       name: src.name || '未命名',
@@ -143,9 +279,8 @@
       position: src.position || '近战位',
       rarity: num(src.rarity),
       avatar: src.avatar || '',
-      panel: flatPanel(src),
-      favor: src.favor ? { hp: num(src.favor.hp), atk: num(src.favor.atk), def: num(src.favor.def) }
-        : { hp: 0, atk: 0, def: 0 },
+      panel: panel || flatPanel(src),
+      favor: fav || { hp: 0, atk: 0, def: 0 },
       useFavor: true,
       assignTarget: false,
       summon: !!src.summon
@@ -191,6 +326,14 @@
     toCalcInput: toCalcInput,
     makeSquadEntry: makeSquadEntry,
     makeBlankEntry: makeBlankEntry,
-    defaultPanel: defaultPanel
+    defaultPanel: defaultPanel,
+    // 详情
+    detail: detail,
+    phasesOf: phasesOfOp,
+    skillsOf: skillsOfOp,
+    talentsOf: talentsOfOp,
+    modulesOf: modulesOfOp,
+    rangeOf: rangeOf,
+    panelAt: panelAt
   };
 })(typeof window !== 'undefined' ? window : globalThis);

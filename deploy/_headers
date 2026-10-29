@@ -10,8 +10,20 @@
   Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=()
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
-# 入口不能缓存：它决定这次加载拿哪一版资源
-/index.html
+# 入口不能缓存：它决定这次加载拿哪一版资源。
+# 注意必须同时写 "/" 和 "/*.html" —— 用户访问的是 /，不是 /index.html，
+# 只写后者的话根路径会落回平台默认策略，缓存行为完全不受控。
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Service Worker 与 manifest 也不能长缓存，否则更新要等一天
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+/manifest.json
   Cache-Control: public, max-age=0, must-revalidate
 
 # 其余文件都带 ?v= 版本串，URL 变了才会重新请求，可以放心长期缓存
