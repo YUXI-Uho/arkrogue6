@@ -1,0 +1,17 @@
+# 抓取缓存与中间产物：体积大、可重新生成，不进版本库
+raw/
+data/relics_wiki.json
+
+# Python
+__pycache__/
+*.py[cod]
+
+# 临时文件 / 本地截图
+.tmpcheck/
+.shots/
+*.tmp
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini

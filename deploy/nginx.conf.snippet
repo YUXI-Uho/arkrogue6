@@ -1,0 +1,31 @@
+# nginx 片段（自建服务器用）。放进 server { } 块里。
+# 前提：站点根目录就是本仓库（index.html 在根上）。
+
+# 安全头。页面零内联脚本 / 零内联样式 / 零外部资源，可以上最严的 CSP。
+add_header X-Content-Type-Options    "nosniff"                    always;
+add_header Referrer-Policy           "strict-origin-when-cross-origin" always;
+add_header X-Frame-Options           "DENY"                       always;
+add_header Permissions-Policy        "geolocation=(), camera=(), microphone=(), payment=()" always;
+add_header Content-Security-Policy   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" always;
+
+# 压缩：is6db.js 有 317 KB，gzip 后约 70 KB，不开就是白等
+gzip              on;
+gzip_min_length   1024;
+gzip_comp_level   6;
+gzip_types        text/css application/javascript application/json image/svg+xml;
+
+# 入口不缓存；带 ?v= 的资源长期缓存
+location = /index.html {
+    add_header Cache-Control "public, max-age=0, must-revalidate" always;
+}
+
+location ~* \.(?:js|css)$ {
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+}
+
+# 默认类型补一下（有些最小镜像不带 mjs/json）
+types {
+    application/javascript  js;
+    text/css                css;
+    application/json        json;
+}

@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# 这些目录本来就不该出现在线上（见 deploy/FILES.txt），这里再挡一层
+Disallow: /raw/
+Disallow: /tools/
+Disallow: /tests/
+Disallow: /review/
+Disallow: /AUDIT.md

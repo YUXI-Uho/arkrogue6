@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>明日方舟 · 集成战略「沉沦者的黑流树海」数值计算器</title>
+<meta name="description" content="集成战略「沉沦者的黑流树海」藏品加成计算器：勾选藏品，看干员最终面板与全队加成汇总。纯本地运行，不收集任何数据。">
+<meta name="theme-color" content="#0d1114">
+<meta property="og:type" content="website">
+<meta property="og:title" content="沉沦者的黑流树海 · 数值计算器">
+<meta property="og:description" content="勾选藏品，看干员最终面板与全队加成汇总。纯本地运行，不收集任何数据。">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="assets/icon.svg?v=20261029a" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg?v=20261029a">
+<link rel="manifest" href="manifest.json?v=20261029a">
+<link rel="stylesheet" href="assets/style.css?v=20261029a">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">IS6</span>
+    <div>
+      <h1>沉沦者的黑流树海 · 数值计算器</h1>
+      <p class="sub">勾选藏品 → 看干员最终面板 &amp; 全队加成汇总</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <button id="btnHelp" class="ghost">公式说明</button>
+    <button id="btnShare" class="ghost" title="把当前配置编码进链接">分享</button>
+    <button id="btnImport" class="ghost">导入</button>
+    <button id="btnExport" class="ghost">导出</button>
+    <button id="btnReset" class="ghost danger">清空</button>
+  </div>
+</header>
+
+<main class="layout" id="layout">
+  <!-- 左栏：藏品库。宽屏下可折叠成一条窄带，把宽度让给右侧 -->
+  <aside class="panel relics" id="relicPanel">
+    <button id="btnUnfoldRelics" class="unfold-bar" title="展开藏品库">
+      <span class="unfold-icon">»</span>
+      <span class="unfold-text">藏品库</span>
+    </button>
+    <div class="relics-body">
+      <div class="panel-head">
+        <h2>藏品库 <span id="relicCount" class="count">0</span>
+          <button id="btnFoldRelics" class="fold-btn" title="收起藏品库">«</button>
+        </h2>
+        <input id="search" type="search" placeholder="搜索名称 / 效果 / 编号，如 攻击力、040" autocomplete="off" aria-label="搜索藏品">
+      </div>
+
+      <div class="filters">
+        <div id="catFilter" class="chips"></div>
+        <div class="filter-row">
+          <label class="check"><input type="checkbox" id="onlySelected"> 只看已选</label>
+          <label class="check"><input type="checkbox" id="onlyMatched"> 只看可计算</label>
+          <select id="rarityFilter">
+            <option value="">全部稀有度</option>
+            <option value="0">普通</option>
+            <option value="1">稀有</option>
+            <option value="2">高稀有度</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="relicList" class="relic-list"></div>
+    </div>
+  </aside>
+
+  <!-- 右栏：三个模块分页，不再纵向堆叠 -->
+  <section class="panel work">
+    <nav class="tabs" role="tablist">
+      <button id="tabSquad" class="tab on" role="tab" aria-selected="true" aria-controls="paneSquad">
+        编队 <span id="tabSquadBadge" class="badge">0/12</span>
+      </button>
+      <button id="tabSummary" class="tab" role="tab" aria-selected="false" aria-controls="paneSummary">
+        汇总 <span id="tabSummaryBadge" class="badge">—</span>
+      </button>
+      <button id="tabCtx" class="tab" role="tab" aria-selected="false" aria-controls="paneCtx">
+        战斗状态 <span id="tabCtxBadge" class="badge">默认</span>
+      </button>
+      <span id="tabsMeta" class="tabs-meta"></span>
+    </nav>
+
+    <div class="panes">
+      <!-- ① 编队 -->
+      <section id="paneSquad" class="pane on" role="tabpanel" aria-labelledby="tabSquad">
+        <div class="squad-head">
+          <h2>编队 <span id="squadCount" class="count">0</span>
+            <span id="squadProgress" class="squad-cap">已选 0/12</span></h2>
+          <div class="add-op">
+            <label class="check" title="只保留有变化的属性行，快速看加成落到哪"><input type="checkbox" id="onlyChanged"> 只看变化</label>
+            <button id="btnTogglePicker" class="primary">添加干员</button>
+            <button id="btnAddBlank" class="ghost">空白干员</button>
+            <button id="btnToggleEdit" class="ghost" title="批量展开 / 收起所有干员的面板编辑区">展开面板</button>
+          </div>
+        </div>
+
+        <!-- 12 个槽位：空槽点击开选择器，满槽点击定位到卡片，右上角 × 直接移出 -->
+        <div id="squadStrip" class="squad-strip" aria-label="编队槽位"></div>
+
+        <div id="opPicker" class="op-picker hidden">
+          <div class="picker-head">
+            <input id="opSearch" type="search" placeholder="搜索干员名 / 分支；留空显示全部" autocomplete="off">
+            <span id="pickerCount" class="hint"></span>
+          </div>
+          <div id="profFilter" class="chips"></div>
+          <div id="starFilter" class="chips"></div>
+          <div id="opGrid" class="op-picker-grid"></div>
+        </div>
+
+        <details class="presets" id="presetBox">
+          <summary class="presets-summary">
+            <span class="presets-title">常用编队</span>
+            <span id="presetCount" class="count">0</span>
+            <span class="hint">点开可保存 / 载入</span>
+          </summary>
+          <div class="presets-body">
+            <div class="presets-head">
+              <input id="presetName" placeholder="编队名（留空自动命名）" autocomplete="off">
+              <button id="btnSaveSquad">保存当前编队</button>
+            </div>
+            <div id="presetList" class="preset-list"></div>
+          </div>
+        </details>
+
+        <div id="squadList" class="squad-list"></div>
+      </section>
+
+      <!-- ② 汇总 -->
+      <section id="paneSummary" class="pane" role="tabpanel" aria-labelledby="tabSummary">
+        <div class="dmg-calc">
+          <div class="dmg-head">
+            <h3>伤害估算</h3>
+            <select id="dmgFromOp" title="把编队里某名干员的最终攻击力直接填进来">
+              <option value="">用编队干员的面板…</option>
+            </select>
+            <details class="dmg-help">
+              <summary>公式</summary>
+              <p>物理 max(攻击×倍率−防御, 攻击×倍率×5%)；法术 max(攻击×倍率×(1−法抗), 攻击×倍率×5%)；真实 攻击×倍率。
+                最后再乘「造成伤害 / 脆弱 / 对敌易伤」这些倍率。</p>
+            </details>
+          </div>
+          <div class="dmg-inputs">
+            <label>攻击力<input type="number" id="dmgAtk" value="1000" min="0" step="1"></label>
+            <label>技能倍率<input type="number" id="dmgScale" value="1" min="0" step="0.05"></label>
+            <label>敌方防御<input type="number" id="dmgDef" value="0" min="0" step="1"></label>
+            <label>敌方法抗<input type="number" id="dmgRes" value="0" min="0" max="100" step="1"></label>
+          </div>
+          <div id="dmgOut" class="dmg-out"></div>
+        </div>
+        <p class="pane-lead">按「属性 + 作用域」聚合，条件未满足的项不计入合计。点任意一行可展开看是哪几件藏品贡献的。</p>
+        <div id="summaryBody" class="summary-body"></div>
+      </section>
+
+      <!-- ③ 战斗状态 -->
+      <section id="paneCtx" class="pane" role="tabpanel" aria-labelledby="tabCtx">
+        <p class="pane-lead">这里的参数决定「条件类」藏品是否生效；改完立即重算，不用切回其他页。</p>
+
+        <div class="ctx-group">
+          <h3>时间与生命 <span id="needTime" class="ctx-need"></span></h3>
+          <div class="ctx-grid">
+            <label>战斗时间(s)<input type="number" id="ctxTime" value="0" min="0" step="1"></label>
+            <label>干员生命(%)<input type="number" id="ctxHp" value="100" min="0" max="100" step="1"></label>
+          </div>
+        </div>
+
+        <div class="ctx-group">
+          <h3>资源 <span id="needRes" class="ctx-need"></span></h3>
+          <div class="ctx-grid">
+            <label>源石锭<input type="number" id="ctxIngot" value="0" min="0" step="1"></label>
+            <label>零件数<input type="number" id="ctxParts" value="0" min="0" step="1"></label>
+            <label title="零件仓库的估值合计；216 树海贵宾套餐按每 5 点估值 +3% 生命">零件估值<input type="number" id="ctxValue" value="0" min="0" step="1"></label>
+          </div>
+        </div>
+
+        <div class="ctx-group">
+          <h3>站位 <span id="needAlly" class="ctx-need"></span></h3>
+          <div class="ctx-grid">
+            <label>周围 4 格干员数<input type="number" id="ctxAlly" value="0" min="0" step="1"></label>
+          </div>
+        </div>
+
+        <div class="ctx-group">
+          <h3>状态开关 <span id="needState" class="ctx-need"></span></h3>
+          <div class="ctx-grid ctx-checks">
+            <label class="check inline"><input type="checkbox" id="ctxSkill"> 技能开启中</label>
+            <label class="check inline"><input type="checkbox" id="ctxShield"> 拥有屏障</label>
+            <label class="check inline"><input type="checkbox" id="ctxFirst" checked> 首次部署</label>
+            <label class="check inline" title="击倒/击杀敌人等瞬时触发"><input type="checkbox" id="ctxProc"> 触发类效果生效</label>
+          </div>
+        </div>
+
+        <div class="ctx-group wide">
+          <h3>场上职业人数 <span id="needProf" class="ctx-need"></span></h3>
+          <div class="prof-row">
+            <div id="profCounts" class="prof-counts"></div>
+            <button id="btnProfAuto" class="tiny">按编队填充</button>
+          </div>
+        </div>
+
+        <div id="ctxImpact" class="ctx-impact"></div>
+        <!-- 被条件挡下的具体条目：填住页面下半部分，也说明「改哪个参数有用」 -->
+        <div id="ctxUnmet" class="ctx-unmet"></div>
+      </section>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="弹窗">
+  <div class="modal-box">
+    <button id="modalClose" class="modal-close">×</button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<!-- 脚本顺序是硬约束：
+     属性/枚举注册表 → 表结构 → 数据产物 → 数据库引擎 → 迁移 → 解析与引擎 → 仓储 → 界面
+
+     所有资源带同一个 ?v= 版本串：部署后 CDN / 浏览器会把旧文件缓存住，
+     代码更新而 data/is6db.js 仍是旧版（或反过来）会是最难排查的故障。
+     版本串只在这一处改，tools/check_enums.py 会校验全部标签完全一致。 -->
+<script src="core/schema.js?v=20261029a"></script>
+<script src="core/enums.js?v=20261029a"></script>
+<script src="core/db/schema.js?v=20261029a"></script>
+<script src="data/is6db.js?v=20261029a"></script>
+<script src="core/db/db.js?v=20261029a"></script>
+<script src="core/db/migrate.js?v=20261029a"></script>
+<script src="js/effects.js?v=20261029a"></script>
+<script src="js/engine.js?v=20261029a"></script>
+<script src="core/repos/operators.repo.js?v=20261029a"></script>
+<script src="core/repos/relics.repo.js?v=20261029a"></script>
+<script src="core/repos/squads.repo.js?v=20261029a"></script>
+<script src="js/app.js?v=20261029a"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "name": "明日方舟 · 沉沦者的黑流树海 数值计算器",
+  "short_name": "IS6 计算器",
+  "description": "集成战略「沉沦者的黑流树海」藏品加成计算器：勾选藏品，看干员最终面板与全队加成汇总。纯本地运行，不收集任何数据。",
+  "lang": "zh-CN",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0d1114",
+  "theme_color": "#0d1114",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
