@@ -15,3 +15,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# 工具链自己的本地状态（工作日志等），不属于交付物
+.workbuddy-ai/
