@@ -499,6 +499,28 @@ eq(E.computeOperator(op, E.buildModifiers([{ id: '209' }, { id: '142', stack: 3 
 eq(E.summarize(E.buildModifiers([{ id: '216' }], index), { value: 1000 }).panel.hp.pct, 150, '216 估值 1000 封顶 +150%');
 eq(E.summarize(E.buildModifiers([{ id: '216' }], index), { value: 20 }).panel.hp.pct, 12, '216 估值 20 → 4 档 × 3% = 12%');
 
+console.log('=== 17. 不做假账：未注册属性 / 攻击间隔修正项都进「未计入面板」===');
+// 手工构造修正项：不依赖数据里恰好有没有这类藏品，直接测引擎的兜底路径
+function handMod(over) {
+  return Object.assign({
+    relicId: 'x', relicName: '测试藏品', rarity: 0, category: '测试', stageName: '',
+    stack: 0, stat: 'atk', label: '测试', bucket: 'panel', pct: false, value: 10,
+    mult: false, group: null, scope: null, cond: null, text: '测试',
+    relicStacks: {}, relics: {}
+  }, over || {});
+}
+
+const unknown = E.computeOperator(op, [handMod({ stat: 'notAStat', label: '未注册属性' })], {});
+eq(unknown.unapplied.length, 1, '未注册属性进 unapplied，而不是静默消失');
+ok(/未在 core\/schema\.js 注册/.test(unknown.unapplied[0].reason), '未注册属性给出了原因');
+eq(unknown.final.atk, 500, '未注册属性不影响面板');
+
+const ivl = E.computeOperator(op, [handMod({ stat: 'interval', label: '攻击间隔', pct: true, value: -10 })], {});
+eq(ivl.final.interval, +(1.2 * 100 / 100).toFixed(3), '攻击间隔仍由攻速推导，不被修正项直接加减');
+eq(ivl.unapplied.length, 1, '攻击间隔修正项进 unapplied');
+ok(/由攻速推导/.test(ivl.unapplied[0].reason), '攻击间隔给出了原因');
+eq(ivl.acc.interval.list.length, 0, 'acc.interval 不再残留已生效条目');
+
 console.log('');
 console.log('通过 %d 项，失败 %d 项', pass, fail);
 if (specialOnly.length) {

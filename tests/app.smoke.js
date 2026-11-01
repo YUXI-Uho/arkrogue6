@@ -70,6 +70,11 @@ El.prototype.input = function () {
   if (this.oninput) this.oninput();
   (this.handlers.input || []).forEach(fn => fn.call(this));
 };
+// 键盘事件：只带 key 与 preventDefault，够 app.js 的键盘流用
+El.prototype.keydown = function (key) {
+  const ev = { key, preventDefault() {}, stopPropagation() {} };
+  (this.handlers.keydown || []).forEach(fn => fn.call(this, ev));
+};
 
 const ids = {};
 const doc = {
@@ -636,9 +641,9 @@ gLine.click();
 ok(String(gLine.className).indexOf('open') < 0, '再点收起');
 
 console.log('=== 编队面板对照表 ===');
-const tableOf = () => $('summaryBody').children
+const tableOf = () => $('squadTableBox').children
   .filter(c => /编队面板对照/.test((c.children[0] || {}).textContent || ''))[0];
-ok(!!tableOf(), '汇总页有「编队面板对照」卡');
+ok(!!tableOf(), '汇总页顶部有「编队面板对照」卡（不再埋在六张卡片后面）');
 ok(tableOf().children.filter(x => String(x.className) === 'empty').length === 1,
    '编队为空时显示引导文案而不是空表');
 tiles()[0].click();
@@ -646,6 +651,16 @@ const tbl = tableOf();
 ok(tbl.children.filter(x => x.tagName === 'TABLE').length === 1, '对照表渲染成 table');
 const tbody = tbl.children.filter(x => x.tagName === 'TABLE')[0].children.filter(x => x.tagName === 'TBODY')[0];
 ok(tbody.children.length === 1, '表体 1 行对应 1 名干员');
+// 行式化：每格是「最终值 + 变化量 + 涨幅%」，悬停给出「基础 → 最终」
+const row0 = tbody.children[0];
+const numCells = row0.children.filter(c => String(c.className) === 'num');
+ok(numCells.length === 6, '每行 6 个数值格（生命/攻击/防御/法抗/攻速/费用）');
+const atkCell = numCells[1];
+const pctCell = atkCell.children.filter(c => /^pc/.test(String(c.className)))[0];
+ok(atkCell.children.length >= 2, '攻击格显示最终值 + 变化量');
+ok(!!pctCell && /^[+-]\d+(\.\d)?%$/.test(pctCell.textContent),
+   '攻击格带涨幅百分比：' + (pctCell ? pctCell.textContent : '（缺）'));
+ok(/→|无变化/.test(String(atkCell.title)), '悬停标题给出基础值对照：' + atkCell.title);
 
 console.log('=== 职业人数步进器 ===');
 $('btnReset').click();
@@ -666,6 +681,29 @@ ok(dmgSel.children.length === 2, '下拉含 1 名干员 + 占位项');
 dmgSel.value = '0';
 (dmgSel.handlers.change || []).forEach(fn => fn.call(dmgSel));
 ok(Number($('dmgAtk').value) > 0, '选干员后攻击力被填入：' + $('dmgAtk').value);
+
+// 技能下拉：选完干员才能用，名字里直接标出能用的倍率
+const skillSel = $('dmgFromSkill');
+ok(!skillSel.disabled && skillSel.children.length > 1,
+   '选干员后技能下拉可用（' + skillSel.children.length + ' 项）');
+const withScale = skillSel.children.filter(c => c.value !== '' && /×/.test(c.textContent));
+const noScale = skillSel.children.filter(c => c.value !== '' && !/×/.test(c.textContent));
+ok(withScale.length > 0, '技能名里标出可用的倍率：' + (withScale[0] || {}).textContent);
+
+skillSel.value = withScale[0].value;
+(skillSel.handlers.change || []).forEach(fn => fn.call(skillSel));
+ok(Number($('dmgScale').value) > 0 && Number($('dmgScale').value) !== 1,
+   '倍率被填成 ' + $('dmgScale').value);
+ok(/持续|SP/.test($('dmgSkillNote').textContent),
+   '给出技能描述让人核对：' + $('dmgSkillNote').textContent);
+
+if (noScale.length) {
+  const before = Number($('dmgScale').value);
+  skillSel.value = noScale[0].value;
+  (skillSel.handlers.change || []).forEach(fn => fn.call(skillSel));
+  ok(Number($('dmgScale').value) === before, '认不出倍率的技能不擅自改倍率');
+  ok(/手填/.test($('toast').textContent), '并提示手填：' + $('toast').textContent);
+}
 
   console.log('=== 弹窗 ===');
   $('btnHelp').click();
@@ -840,6 +878,186 @@ ok(Number($('dmgAtk').value) > 0, '选干员后攻击力被填入：' + $('dmgAt
   ok(fullLink.length > 0 && fullLink.length < 6000,
      '12 人满编链接 ' + fullLink.length + ' 字符（上限 6000，v3 存档直编会是 ~14000）');
   $('modalClose').click();
+
+  console.log('=== 藏品键盘流（不碰鼠标连续录入）===');
+  $('btnReset').click();
+  const searchBox = $('search');
+  searchBox.value = '折戟';
+  searchBox.keydown('Enter');
+  ok(Number($('relicCount').textContent) === 1, '输入名称 + 回车直接选中');
+  ok(searchBox.value === '', '回车后输入框清空，可接着录下一件');
+  searchBox.value = '折戟';
+  searchBox.keydown('Enter');
+  ok(Number($('relicCount').textContent) === 0, '同一件再回车一次 = 取消选中');
+
+  searchBox.value = '';
+  searchBox.keydown('Escape');
+  ok($('relicList').children.filter(c => c.dataset.id).length === 251, 'Esc 清空后恢复全部 251 件');
+
+  searchBox.keydown('ArrowDown');
+  ok($('relicList').children.filter(c => String(c.className).indexOf('cursor') >= 0).length === 1,
+     '↓ 高亮一件');
+  searchBox.keydown('ArrowDown');
+  ok($('relicList').children.filter(c => String(c.className).indexOf('cursor') >= 0).length === 1,
+     '再按 ↓ 仍然只有一件高亮（不累积）');
+  searchBox.keydown('Enter');
+  ok(Number($('relicCount').textContent) === 1, '回车选中高亮项');
+
+  ok($('relicList').children.filter(c => c.dataset.id && c.classList.contains('r2')).length > 0,
+     '稀有度色条类名已挂上（紧凑瓦片里标签是隐藏的）');
+
+  console.log('=== 批量录入（粘贴藏品名）===');
+  $('btnReset').click();
+  $('btnPaste').click();
+  const pasteTa = $('modalBody').children.filter(c => c.tagName === 'TEXTAREA')[0];
+  ok(!!pasteTa, '批量录入弹窗有输入框');
+  pasteTa.value = '折戟-锋刃、猎印\n1. 残弩-新典训\n不存在的藏品名';
+  const pasteBtn = $('modalBody').children.filter(c => c.tagName === 'BUTTON' && /解析/.test(c.textContent))[0];
+  ok(!!pasteBtn, '有「解析并勾选」按钮');
+  pasteBtn.onclick();
+  ok(Number($('relicCount').textContent) === 3, '三种写法都匹配上（实际 ' + $('relicCount').textContent + ' 件）');
+  const pasteMsg = $('modalBody').children.filter(c => /未找到/.test(c.textContent))[0];
+  ok(!!pasteMsg && /不存在的藏品名/.test(pasteMsg.textContent), '未匹配的条目原样列出，不静默丢弃');
+  $('modalClose').click();
+
+  console.log('=== 藏品按编队收敛（默认只淡化，不隐藏）===');
+  $('btnReset').click();
+  const relicCardCount = () => $('relicList').children.filter(c => c.dataset && c.dataset.id).length;
+  const dimmed = () => $('relicList').children.filter(c => c.dataset && c.dataset.id && c.classList.contains('off'));
+  const noteText = () => $('relicScopeNote').children.map(c => c.textContent || '').join(' ');
+  const noteBtn = re => $('relicScopeNote').children
+    .filter(c => c.tagName === 'BUTTON' && re.test(c.textContent))[0];
+
+  ok(relicCardCount() === 251, '空编队时 251 件全在');
+  ok($('relicScopeNote').children.length === 0, '没有编队时不显示收敛提示条');
+
+  tiles()[0].click();
+  ok(cards().length === 1, '加 1 名干员后编队非空（实际 ' + cards().length + '）');
+  ok(relicCardCount() === 251, '默认不隐藏：编队非空时仍然渲染 251 件');
+  ok(dimmed().length > 0 && dimmed().length < 251,
+     '与本队无关的 ' + dimmed().length + ' 件被淡化，其余保留');
+  ok(/与本队无关/.test(noteText()), '提示条说明淡化含义：' + noteText());
+  // 提示条的件数必须等于肉眼看到的淡化瓦片数：已选中的无关藏品不淡化，也不能被算进去
+  const offNum = () => +((/淡化的 (\d+) 件/.exec(noteText()) || [])[1] || -1);
+  ok(offNum() === dimmed().length,
+     '提示条件数与实际淡化数一致（' + offNum() + ' / ' + dimmed().length + '）');
+
+  // 先勾一件「无关」藏品：收敛后它必须还在，否则玩家取消不掉
+  const offId = dimmed()[0].dataset.id;
+  const offBefore = offNum();
+  dimmed()[0].click();
+  ok(!!cardOf(offId) && !cardOf(offId).classList.contains('off'),
+     '勾选后该藏品不再淡化（已选中的永远显示）');
+  ok(offNum() === offBefore - 1, '勾选后提示条件数跟着减 1（' + offNum() + '）');
+
+  const onlyBtn = noteBtn(/只看这些/);
+  ok(!!onlyBtn, '淡化模式下有「只看这些」按钮');
+  onlyBtn.click();
+  const narrowed = $('relicList').children.filter(c => c.dataset && c.dataset.id);
+  ok(narrowed.length < 251 && narrowed.length > 0, '收敛后只剩 ' + narrowed.length + ' 件');
+  ok(narrowed.every(c => !c.classList.contains('off')), '收敛后列表里没有淡化项');
+  ok(!!cardOf(offId), '已选中的无关藏品在收敛后仍可见（能取消）');
+
+  const backBtn = noteBtn(/显示全部/);
+  ok(!!backBtn, '收敛模式下有「显示全部」按钮');
+  backBtn.click();
+  ok(relicCardCount() === 251, '「显示全部」恢复 251 件');
+  ok(!!cardOf(offId) && String($('relicCount').textContent) === '1', '恢复全部后选择态没丢');
+
+  cardOf(offId).click();
+  ok(String($('relicCount').textContent) === '0', '再点一次取消选中');
+  $('btnReset').click();
+
+  console.log('=== 首屏结论 + 一键示例 ===');
+  // 结论条是多层嵌套的 span/b，桩里的 textContent 不会聚合子节点，得自己递归拼
+  const deepText = n => {
+    if (!n) return '';
+    if (n.nodeType === 3) return n.textContent;
+    if (n.children && n.children.length) return n.children.map(deepText).join('');
+    return n.textContent || '';
+  };
+  const verdictText = () => deepText($('verdict'));
+  const verdictBtn = re => $('verdict').children
+    .filter(c => c.tagName === 'BUTTON' && re.test(c.textContent))[0];
+
+  ok(/还没有干员和藏品/.test(verdictText()), '空状态给出一句话引导：' + verdictText());
+  const demoBtn = verdictBtn(/载入示例/);
+  ok(!!demoBtn, '空状态有「载入示例」按钮');
+  ok(!!verdictBtn(/添加干员/), '空状态有「添加干员」按钮');
+
+  demoBtn.click();
+  ok(cards().length === 6, '示例载入 6 名干员（实际 ' + cards().length + '）');
+  ok(Number($('relicCount').textContent) === 8, '示例勾上 8 件藏品（实际 ' + $('relicCount').textContent + '）');
+  ok(/8 件藏品/.test(verdictText()), '结论条显示藏品件数：' + verdictText());
+  ok(/项加成生效/.test(verdictText()), '结论条显示生效项数');
+  ok(/全队平均 攻击 \+/.test(verdictText()), '结论条给出全队平均攻击涨幅：' + verdictText());
+  ok(/已载入示例/.test($('toast').textContent), '提示已载入示例：' + $('toast').textContent);
+
+  // 同一份示例跑两次必须一模一样，否则「示例」就不可复现
+  const squadNames = () => (savedState().squad || []).map(o => o.name).join(',');
+  const firstPick = Object.keys(savedState().relics).sort().join(',');
+  const firstSquad = squadNames();
+  $('btnReset').click();
+  verdictBtn(/载入示例/).click();
+  ok(Object.keys(savedState().relics).sort().join(',') === firstPick, '示例藏品可复现（两次一致）');
+  ok(squadNames() === firstSquad, '示例编队可复现（两次一致）');
+  $('btnReset').click();
+
+  console.log('=== 技能查询页（不选藏品也能用）===');
+  $('tabSkill').click();
+  ok($('tabSkill').getAttribute('aria-selected') === 'true', '技能页能切过去');
+  ok(String($('paneSkill').className).indexOf('on') >= 0, '技能页面板显示');
+  const skillGrid = () => $('skillBody').children.filter(c => String(c.className) === 'skill-ops')[0];
+  ok(!!skillGrid() && skillGrid().children.length > 0,
+     '没编队没藏品也列出干员（' + (skillGrid() ? skillGrid().children.length : 0) + ' 名）');
+
+  $('skillSearch').value = 'Mechanist';
+  $('skillSearch').handlers.input.forEach(fn => fn.call($('skillSearch')));
+  await sleep(260);
+  ok(skillGrid() && skillGrid().children.length === 1, '搜索后只剩 1 名（实际 ' +
+     (skillGrid() ? skillGrid().children.length : 0) + '）');
+  ok(/共 1 名/.test($('skillHint').textContent), '顶部说明匹配数量：' + $('skillHint').textContent);
+
+  $('skillSearch').keydown('Enter');
+  const cards2 = $('skillBody').children.filter(c => String(c.className) === 'skill-card');
+  ok(cards2.length > 0, '回车打开第一名干员的 ' + cards2.length + ' 个技能');
+  const skMeta = cards2[0].children.filter(c => String(c.className) === 'skill-meta')[0];
+  ok(!!skMeta && /SP|持续|触发/.test(skMeta.textContent), '技能卡给出数值：' + (skMeta || {}).textContent);
+  const skDesc = cards2[0].children.filter(c => String(c.className) === 'skill-desc')[0];
+  ok(!!skDesc && skDesc.textContent.length > 4, '技能卡给出描述原文');
+
+  const useBtn = cards2
+    .map(c => c.children.filter(x => String(x.className) === 'skill-acts')[0])
+    .filter(Boolean)
+    .map(a => a.children.filter(x => /算伤害/.test(x.textContent))[0])
+    .filter(Boolean)[0];
+  ok(!!useBtn, '能从描述读出倍率的技能带「算伤害」按钮：' + (useBtn ? useBtn.textContent : '（无）'));
+  if (useBtn) {
+    const beforeScale = Number($('dmgScale').value);
+    useBtn.click();
+    ok(Number($('dmgScale').value) !== beforeScale, '点一下把倍率填进伤害估算：' + $('dmgScale').value);
+    ok($('tabSummary').getAttribute('aria-selected') === 'true', '并自动跳到汇总页看结果');
+    $('tabSkill').click();
+  }
+
+  const linkBtn = $('skillBody').children
+    .filter(c => String(c.className) === 'skill-head')[0]
+    .children.filter(c => /复制链接/.test(c.textContent))[0];
+  ok(!!linkBtn, '技能页有「复制链接」');
+  linkBtn.click();
+  const skTa = $('modalBody').children.filter(c => c.tagName === 'TEXTAREA')[0];
+  ok(!!skTa && /#skill=Mechanist/.test(skTa.value), '链接里带 #skill=干员名：' +
+     (skTa ? skTa.value.split('#')[1] : '（缺）'));
+  $('modalClose').click();
+
+  // 深度链接：重新走一遍启动流程，#skill= 应该直接落到这名干员的技能页
+  global.location.hash = '#skill=Mechanist';
+  doc._ready.forEach(fn => fn());
+  ok($('tabSkill').getAttribute('aria-selected') === 'true', '带 #skill= 打开直接落在技能页');
+  ok($('skillBody').children.filter(c => String(c.className) === 'skill-card').length > 0,
+     '落地即有技能卡，不用再点一次');
+  ok(/已打开Mechanist的技能页/.test($('toast').textContent), '提示已打开：' + $('toast').textContent);
+  ok(global.location.hash === '', 'hash 被清掉，刷新不会重复覆盖');
 
   await sleep(260);
   console.log('');

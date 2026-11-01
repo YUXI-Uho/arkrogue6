@@ -14,6 +14,7 @@
  *   OperatorRepo.init(db)                   传入 DB（默认 window.DB），读 operators 表
  *   OperatorRepo.all()                      全量（副本）
  *   OperatorRepo.getByName(name)
+ *   OperatorRepo.getById(id)                后端按 id 解析内置干员时用
  *   OperatorRepo.search(query, filter)      filter: {profession, rarity, subProfession}
  *                                           rarity 支持 6 / '6' / '4-'（4 星及以下）
  *   OperatorRepo.toCalcInput(entry, opts)   编队条目 → 引擎输入
@@ -124,6 +125,7 @@
   function all() { return list.slice(); }
 
   function getByName(name) { return byName[name] || null; }
+  function getById(id) { return byId[id] || null; }
 
   // ---------- 详情 ----------
   // 详情页可以按 id 也可以按名字打开：编队里存的是名字（玩家可改），
@@ -322,6 +324,7 @@
     init: init,
     all: all,
     getByName: getByName,
+    getById: getById,
     search: search,
     toCalcInput: toCalcInput,
     makeSquadEntry: makeSquadEntry,

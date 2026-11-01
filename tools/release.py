@@ -24,7 +24,7 @@ from datetime import datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INDEX = os.path.join(ROOT, "index.html")
 
-# 上线要传的文件（相对仓库根）。刻意不包含 raw/ tools/ tests/ review/ AUDIT.md：
+# 上线要传的文件（相对仓库根）。刻意不包含 raw/ tools/ tests/ review/ server/：
 # 那些是内部产物，公开出去既泄露抓取缓存也白白多传几十 MB。
 SHIP_DIRS = ["assets", "core", "js"]
 SHIP_FILES = ["index.html", "404.html", "robots.txt", "manifest.json", "sw.js", "LICENSE"]
@@ -150,9 +150,9 @@ def main():
             wrote = True
             print("已写入 index.html（%d 处 ?v=%s）" % (len(found), new))
 
-        run([sys.executable, os.path.join("tools", "check_enums.py")], "枚举 / 表结构 / 入口资源")
+        run([sys.executable, os.path.join("tools", "check_enums.py")], "枚举 / 表结构 / 入口资源 / 后端数据源")
         if not skip_tests:
-            for t in ("engine.test.js", "db.test.js", "app.smoke.js"):
+            for t in ("engine.test.js", "db.test.js", "app.smoke.js", "server.test.js"):
                 run(["node", os.path.join("tests", t)], "tests/" + t)
     except BaseException:
         # BaseException 而不是 SystemExit：node 不在 PATH 时 subprocess 抛的是
@@ -172,7 +172,7 @@ def main():
         "由 `tools/release.py` 生成，版本串 **%s**。" % new,
         "",
         "只传下面这些文件，**不要**把 %s、`tools/`、`tests/`、" % raw_txt,
-        "`review/`、`AUDIT.md` 一起传上去 —— 那是内部产物，公开出去既泄露抓取缓存也白白占带宽。",
+        "`review/`、`server/` 一起传上去 —— 那是内部产物，公开出去既泄露抓取缓存也白白占带宽。",
         "",
         "```",
     ]

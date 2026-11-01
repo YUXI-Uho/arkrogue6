@@ -10,10 +10,10 @@
 <meta property="og:title" content="沉沦者的黑流树海 · 数值计算器">
 <meta property="og:description" content="勾选藏品，看干员最终面板与全队加成汇总。纯本地运行，不收集任何数据。">
 <meta name="twitter:card" content="summary">
-<link rel="icon" href="assets/icon.svg?v=20261029h" type="image/svg+xml">
-<link rel="apple-touch-icon" href="assets/icon.svg?v=20261029h">
-<link rel="manifest" href="manifest.json?v=20261029h">
-<link rel="stylesheet" href="assets/style.css?v=20261029h">
+<link rel="icon" href="assets/icon.svg?v=20261101a" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icon.svg?v=20261101a">
+<link rel="manifest" href="manifest.json?v=20261101a">
+<link rel="stylesheet" href="assets/style.css?v=20261101a">
 </head>
 <body>
 <header class="topbar">
@@ -46,7 +46,10 @@
           <button id="btnFoldRelics" class="fold-btn" title="收起藏品库">«</button>
         </h2>
         <input id="search" type="search" placeholder="搜索名称 / 效果 / 编号，如 攻击力、040" autocomplete="off" aria-label="搜索藏品">
+        <button id="btnPaste" class="tiny" title="粘贴一串藏品名，一次勾上">批量录入</button>
       </div>
+
+      <div id="relicScopeNote" class="hint scope-note"></div>
 
       <div class="filters">
         <div id="catFilter" class="chips"></div>
@@ -78,8 +81,14 @@
       <button id="tabCtx" class="tab" role="tab" aria-selected="false" aria-controls="paneCtx">
         战斗状态 <span id="tabCtxBadge" class="badge">默认</span>
       </button>
+      <button id="tabSkill" class="tab" role="tab" aria-selected="false" aria-controls="paneSkill">
+        技能 <span id="tabSkillBadge" class="badge">—</span>
+      </button>
       <span id="tabsMeta" class="tabs-meta"></span>
     </nav>
+
+    <!-- 首屏结论：不随页签切换消失，回答「我这套配置现在怎么样」 -->
+    <div id="verdict" class="verdict" aria-live="polite"></div>
 
     <div class="panes">
       <!-- ① 编队 -->
@@ -128,11 +137,16 @@
 
       <!-- ② 汇总 -->
       <section id="paneSummary" class="pane" role="tabpanel" aria-labelledby="tabSummary">
+        <!-- 结果行式化：一人一行、一屏看全，排在汇总卡片前面 -->
+        <div id="squadTableBox" class="squad-table-box"></div>
         <div class="dmg-calc">
           <div class="dmg-head">
             <h3>伤害估算</h3>
             <select id="dmgFromOp" title="把编队里某名干员的最终攻击力直接填进来">
               <option value="">用编队干员的面板…</option>
+            </select>
+            <select id="dmgFromSkill" title="把技能描述里的「相当于攻击力 N%」直接填成倍率" disabled>
+              <option value="">先在上面选干员…</option>
             </select>
             <details class="dmg-help">
               <summary>公式</summary>
@@ -140,6 +154,7 @@
                 最后再乘「造成伤害 / 脆弱 / 对敌易伤」这些倍率。</p>
             </details>
           </div>
+          <div id="dmgSkillNote" class="hint dmg-skill-note"></div>
           <div class="dmg-inputs">
             <label>攻击力<input type="number" id="dmgAtk" value="1000" min="0" step="1"></label>
             <label>技能倍率<input type="number" id="dmgScale" value="1" min="0" step="0.05"></label>
@@ -202,6 +217,15 @@
         <!-- 被条件挡下的具体条目：填住页面下半部分，也说明「改哪个参数有用」 -->
         <div id="ctxUnmet" class="ctx-unmet"></div>
       </section>
+
+      <!-- ④ 技能：不依赖编队与藏品，光看数值也能用；#skill=干员名 可分享 -->
+      <section id="paneSkill" class="pane" role="tabpanel" aria-labelledby="tabSkill">
+        <div class="skill-bar">
+          <input id="skillSearch" type="search" placeholder="搜干员名 / 分支" autocomplete="off" aria-label="搜索干员">
+          <span id="skillHint" class="hint"></span>
+        </div>
+        <div id="skillBody" class="skill-body"></div>
+      </section>
     </div>
   </section>
 </main>
@@ -223,17 +247,17 @@
      所有资源带同一个 ?v= 版本串：部署后 CDN / 浏览器会把旧文件缓存住，
      代码更新而 data/is6db.js 仍是旧版（或反过来）会是最难排查的故障。
      版本串只在这一处改，tools/check_enums.py 会校验全部标签完全一致。 -->
-<script src="core/schema.js?v=20261029h"></script>
-<script src="core/enums.js?v=20261029h"></script>
-<script src="core/db/schema.js?v=20261029h"></script>
-<script src="data/is6db.js?v=20261029h"></script>
-<script src="core/db/db.js?v=20261029h"></script>
-<script src="core/db/migrate.js?v=20261029h"></script>
-<script src="js/effects.js?v=20261029h"></script>
-<script src="js/engine.js?v=20261029h"></script>
-<script src="core/repos/operators.repo.js?v=20261029h"></script>
-<script src="core/repos/relics.repo.js?v=20261029h"></script>
-<script src="core/repos/squads.repo.js?v=20261029h"></script>
-<script src="js/app.js?v=20261029h"></script>
+<script src="core/schema.js?v=20261101a"></script>
+<script src="core/enums.js?v=20261101a"></script>
+<script src="core/db/schema.js?v=20261101a"></script>
+<script src="data/is6db.js?v=20261101a"></script>
+<script src="core/db/db.js?v=20261101a"></script>
+<script src="core/db/migrate.js?v=20261101a"></script>
+<script src="js/effects.js?v=20261101a"></script>
+<script src="js/engine.js?v=20261101a"></script>
+<script src="core/repos/operators.repo.js?v=20261101a"></script>
+<script src="core/repos/relics.repo.js?v=20261101a"></script>
+<script src="core/repos/squads.repo.js?v=20261101a"></script>
+<script src="js/app.js?v=20261101a"></script>
 </body>
 </html>

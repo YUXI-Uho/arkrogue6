@@ -1,0 +1,22 @@
+# 在仓库根目录执行：docker compose -f deploy/docker-compose.yml up -d --build
+# 只跑一个 nginx 容器，内存上限 128MB —— 学生机 2G 内存里很宽裕。
+name: is6
+
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: is6-web:latest
+    container_name: is6-web
+    restart: unless-stopped
+    ports:
+      - "80:80"          # 先在安全组放行 80；上了 HTTPS 再改成 80:80 + 443:443
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

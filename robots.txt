@@ -6,4 +6,4 @@ Disallow: /raw/
 Disallow: /tools/
 Disallow: /tests/
 Disallow: /review/
-Disallow: /AUDIT.md
+Disallow: /server/

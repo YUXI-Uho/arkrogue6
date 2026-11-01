@@ -177,28 +177,74 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .relic-list {
   max-height: calc(100vh - 290px);
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
+  /* 密集网格：一屏 40+ 件，选藏品不用滚 25 屏。
+     未选中是紧凑瓦片（编号 + 名称两行），选中后跨整行展开出效果与档位控件。 */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  align-content: start;
   gap: 6px;
   padding-right: 4px;
 }
 .relic {
+  position: relative;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--panel2);
-  padding: 7px 9px;
+  padding: 6px 7px;
   cursor: pointer;
   transition: border-color .12s, background .12s;
+}
+/* 稀有度用左边框表达：紧凑模式下标签被隐藏，不能只靠文字 */
+.relic.r1 { border-left: 2px solid #2d4467; }
+.relic.r2 { border-left: 2px solid #5a4a2a; }
+/* 编号贴在右上角：attr(data-id) 不需要额外 DOM，冒烟测试的子节点索引保持不变 */
+.relic::before {
+  content: attr(data-id);
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  font-size: 9px;
+  color: var(--muted);
 }
 .relic:hover { border-color: #3a5a63; background: #1b262d; }
 .relic.selected { border-color: #2e7d77; background: #16282a; }
 .relic.selected:hover { border-color: #4fd1c5; }
+.relic.cursor { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 与本队无关：淡化不隐藏。透明度而不是 display:none —— 信息不能丢，只是让位 */
+.relic.off { opacity: .36; }
+.relic.off:hover, .relic.off.cursor { opacity: .85; }
 .relic-head { display: flex; align-items: flex-start; gap: 8px; }
 .relic-head input[type="checkbox"] { margin-top: 4px; accent-color: var(--accent); }
 .relic-title { flex: 1; min-width: 0; }
 .relic-name { font-weight: 600; font-size: 13px; cursor: pointer; }
 .relic-name:hover { color: var(--accent); }
 .relic-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; color: var(--muted); font-size: 11px; }
+/* ---- 紧凑瓦片：未选中时只留名字，效果与标签让位给密度 ---- */
+.relic:not(.selected) { min-height: 46px; }
+.relic:not(.selected) .relic-head { gap: 5px; }
+.relic:not(.selected) .relic-head input[type="checkbox"] {
+  width: 12px; height: 12px; margin-top: 1px; flex: 0 0 auto;
+}
+.relic:not(.selected) .relic-name {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+  /* 给右上角的编号让位：88px 的瓦片里三四个字的名字会顶到编号上 */
+  padding-right: 20px;
+}
+.relic:not(.selected) .relic-meta,
+.relic:not(.selected) .relic-body { display: none; }
+/* 选中 = 跨整行展开，档位 / 层数 / 效果文案回到原来的宽度 */
+.relic.selected { grid-column: 1 / -1; }
+.relic-list .empty { grid-column: 1 / -1; }
+/* 收敛提示条：没有编队时整条为空，不占高度 */
+.scope-note { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 2px 0 6px; }
+.scope-note:empty { display: none; }
 .tag {
   padding: 0 5px;
   border-radius: 4px;
@@ -275,6 +321,30 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
   white-space: nowrap;
 }
 .tabs-meta b { color: var(--text); font-weight: 600; }
+/* 首屏结论条：三个数字常驻，切页签不消失 */
+.verdict {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px 16px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, #1a242a, #172026);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.verdict:empty { display: none; }
+.verdict .v-item { display: flex; align-items: baseline; gap: 4px; }
+.verdict .v-item b { color: var(--text); font-size: 15px; font-weight: 600; }
+.verdict .v-item.on b { color: var(--accent); }
+.verdict .v-item.warn b { color: var(--accent2); }
+.verdict .v-item[onclick] { cursor: pointer; }
+.verdict .v-item[onclick]:hover { color: var(--accent); }
+.verdict .v-item .tiny { margin-left: 6px; }
+.verdict .v-lead { color: var(--muted); }
 @media (max-width: 760px) {
   .tabs-meta { display: none; }
   .tab { padding: 10px 9px; font-size: 12.5px; }
@@ -714,6 +784,51 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .op-table td.num .up, .op-table td.num .down { margin-left: 6px; font-size: 11px; }
 .op-table td.num .up { color: var(--green); }
 .op-table td.num .down { color: var(--red); }
+/* 涨幅百分比：比变化量更小更淡，扫一眼看「谁吃得多」 */
+.op-table td.num .pc { margin-left: 5px; font-size: 10.5px; opacity: .85; }
+.op-table td.num .pc.up { color: var(--green); }
+.op-table td.num .pc.down { color: var(--red); }
+/* 面板对照排在汇总页顶部，卡片间距比默认小一点，12 人才塞得进一屏 */
+.squad-table-box .sum-card { margin-bottom: 10px; }
+.squad-table-box .sum-card h3 { display: flex; align-items: baseline; gap: 8px; }
+.squad-table-box .th-note { color: var(--muted); font-size: 11px; font-weight: 400; }
+
+/* ---- 技能页：不依赖编队与藏品，纯查询 ---- */
+.skill-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.skill-bar input { flex: 1; min-width: 0; }
+.skill-bar .hint { white-space: nowrap; }
+.skill-ops {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 6px;
+}
+.skill-op {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 6px 9px; text-align: left;
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px;
+  cursor: pointer;
+}
+.skill-op:hover { border-color: var(--accent); background: #1b262d; }
+.skill-op .so-name { font-weight: 600; font-size: 12.5px; }
+.skill-op .so-prof { color: var(--muted); font-size: 11px; }
+.skill-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--line);
+}
+.skill-head h3 { font-size: 15px; }
+.skill-head button { margin-left: 0; }
+.skill-head button:first-of-type { margin-left: auto; }
+.skill-card {
+  padding: 9px 11px; margin-bottom: 8px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.skill-card-head { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.skill-card-head h4 { margin: 0; font-size: 13.5px; font-weight: 600; }
+.skill-meta { color: var(--muted); font-size: 11.5px; margin-top: 3px; }
+.skill-desc { margin: 5px 0 0; font-size: 12.5px; color: #c7d5dd; line-height: 1.6; }
+.skill-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 10px; }
 
 .modal {
   position: fixed; inset: 0; background: rgba(0,0,0,.65);
@@ -944,6 +1059,9 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .dmg-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
 .dmg-calc h3 { font-size: 13px; color: var(--accent2); font-weight: 600; }
 .dmg-head select { width: auto; max-width: 200px; padding: 2px 6px; font-size: 12px; }
+/* 技能描述回显：填完倍率让人能核对「这个数是从哪来的」 */
+.dmg-skill-note { margin: -4px 0 8px; font-size: 11.5px; line-height: 1.5; }
+.dmg-skill-note:empty { display: none; }
 /* 公式很长，收进一个 details，需要时再展开 */
 .dmg-help { margin-left: auto; }
 .dmg-help summary {

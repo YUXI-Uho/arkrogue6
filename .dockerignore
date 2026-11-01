@@ -1,0 +1,14 @@
+# 构建上下文 = 仓库根目录。这些是内部产物，不该进镜像、也不该传给 docker daemon。
+.git
+.gitignore
+raw/
+tools/
+tests/
+review/
+.workbuddy-ai/
+.shots/
+AUDIT.md
+README.md
+node_modules/
+*.tar
+*.tar.gz

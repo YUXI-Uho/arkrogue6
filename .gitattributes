@@ -1,0 +1,12 @@
+# 统一换行符：仓库内一律 LF，避免 Windows 上编辑后把 CRLF 带进
+# nginx.conf / *.sh / Dockerfile 这类给 Linux 用的文件（CRLF 会让脚本直接报错）。
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary

@@ -52,7 +52,8 @@
   var TABS = [
     { key: 'squad', btn: 'tabSquad', pane: 'paneSquad', badge: 'tabSquadBadge' },
     { key: 'summary', btn: 'tabSummary', pane: 'paneSummary', badge: 'tabSummaryBadge' },
-    { key: 'ctx', btn: 'tabCtx', pane: 'paneCtx', badge: 'tabCtxBadge' }
+    { key: 'ctx', btn: 'tabCtx', pane: 'paneCtx', badge: 'tabCtxBadge' },
+    { key: 'skill', btn: 'tabSkill', pane: 'paneSkill', badge: 'tabSkillBadge' }
   ];
   var TAB_KEY = 'is6calc.tab';
   var FOLD_KEY = 'is6calc.relicFold';
@@ -85,8 +86,13 @@
     ui: {
       // 藏品侧
       search: '', cat: '全部', rarity: '', onlySelected: false, onlyMatched: false,
+      // 「只看影响本队」默认关：漏看一件藏品 = 算错 = 不再信任结果，
+      // 比多看一百个瓦片严重得多。默认只把无关的淡化，玩家自己决定要不要收敛。
+      onlyRelevant: false,
       // 编队网格侧
       pickerOpen: false, pickerProf: '', pickerStar: '', pickerSearch: '',
+      // 技能页：不落存档，靠 #skill= 分享
+      skillOp: '', skillSearch: '', skillFirst: '',
       // 分页与卡片密度
       tab: 'squad', editAll: false, onlyChanged: false
     }
@@ -225,6 +231,9 @@
     var d = ctxCustomCount();
     setBadge('tabCtxBadge', d ? d + ' 项自定义' : '默认', d > 0);
 
+    var skOp = state.ui.skillOp ? OP.getByName(state.ui.skillOp) : null;
+    setBadge('tabSkillBadge', skOp ? skOp.name : '查询', false);
+
     var meta = document.getElementById('tabsMeta');
     if (meta) {
       meta.innerHTML = '';
@@ -235,6 +244,121 @@
     }
   }
 
+  // 首屏结论条：不管停在哪一页，这三个数字都在视线里。
+  // 之前结论埋在三层下面 —— 编队页看不到加成，汇总页看不到编队，
+  // 玩家要来回切才知道「我这套配置到底怎么样」。
+  function squadGain() {
+    var out = { atk: null, hp: null };
+    var res = getResults();
+    ['atk', 'hp'].forEach(function (k) {
+      var sum = 0, n = 0;
+      res.forEach(function (r) {
+        var b = r && r.base ? num(r.base[k]) : 0;
+        var f = r && r.final ? num(r.final[k]) : 0;
+        if (!b || !f) return;         // 没有这项属性的干员不拉低平均
+        sum += (f - b) / b;
+        n++;
+      });
+      if (n) out[k] = Math.round(sum / n * 1000) / 10;   // 保留 1 位小数：首屏不堆精度
+    });
+    return out;
+  }
+
+  function renderVerdict(sum) {
+    var box = document.getElementById('verdict');
+    if (!box) return;
+    box.innerHTML = '';
+    var relicN = Object.keys(state.relics).length;
+    var squadN = state.squad.length;
+
+    // 空状态：一句话说清下一步，并给一个「点了就有东西看」的按钮
+    if (!squadN && !relicN) {
+      box.className = 'verdict blank';
+      box.appendChild(el('span', 'v-lead', '还没有干员和藏品。先载入一份示例看效果，再换成你自己的。'));
+      var demo = el('button', 'tiny primary', '载入示例');
+      demo.onclick = loadDemo;
+      box.appendChild(demo);
+      var add0 = el('button', 'tiny', '添加干员');
+      add0.onclick = openPickerForNew;
+      box.appendChild(add0);
+      return;
+    }
+    box.className = 'verdict';
+
+    var st = sumStats(sum || getSummary());
+
+    var it1 = el('span', 'v-item');
+    it1.appendChild(el('b', null, String(relicN)));
+    it1.appendChild(el('span', null, ' 件藏品'));
+    box.appendChild(it1);
+
+    var it2 = el('span', 'v-item' + (st.ok ? ' on' : ''));
+    it2.appendChild(el('b', null, String(st.ok)));
+    it2.appendChild(el('span', null, ' 项加成生效'));
+    box.appendChild(it2);
+
+    if (st.unmet) {
+      var it3 = el('span', 'v-item warn');
+      it3.appendChild(el('b', null, String(st.unmet)));
+      it3.appendChild(el('span', null, ' 项被条件挡下'));
+      it3.title = '点一下去「战斗状态」看是哪几项';
+      it3.onclick = function () { setTab('ctx'); };
+      box.appendChild(it3);
+    }
+
+    if (!squadN) {
+      var it4 = el('span', 'v-item warn');
+      it4.appendChild(el('span', null, '还没有干员，加人才能看面板'));
+      var add1 = el('button', 'tiny', '添加干员');
+      add1.onclick = openPickerForNew;
+      it4.appendChild(add1);
+      box.appendChild(it4);
+      return;
+    }
+
+    var g = squadGain();
+    if (g.atk != null) {
+      var it5 = el('span', 'v-item');
+      it5.appendChild(el('span', null, '全队平均 '));
+      it5.appendChild(el('b', null, '攻击 ' + fmtDelta(g.atk, true)));
+      if (g.hp != null) {
+        it5.appendChild(el('span', null, ' · 生命 ' + fmtDelta(g.hp, true)));
+      }
+      it5.title = '只统计真有这项属性的干员，召唤物不参与';
+      box.appendChild(it5);
+    }
+  }
+
+  // 一键示例：让第一次打开的人 3 秒内看到「数字会动」。
+  // 选取完全确定（不随机）：6 星里面板齐全的前 6 位 + 对这支队伍有作用、
+  // 且能落到面板的前 8 件藏品。同样的代码跑两次结果一致，测试可以断言。
+  function loadDemo() {
+    var pool = OP.search('', { rarity: 6 });
+    var picked = 0;
+    for (var i = 0; i < pool.length && picked < 6; i++) {
+      var panel = OP.panelAt(pool[i].id, 2);
+      if (!panel) continue;
+      var r = Squad.add(state.squad, OP.makeSquadEntry(pool[i], panel));
+      if (r.ok) picked++;
+    }
+    var ops = state.squad.map(function (o) { return OP.toCalcInput(o); });
+    // 只挑「至少有一条能落到面板」的，否则首屏那三个数字不会动。
+    // 按 id 顺序取前 8 件而不是按强度排序 —— 示例要像「随手打的一局」，
+    // 不能挑出全服最强的 8 件，那会让首屏涨幅夸张到不像真的。
+    var cands = Relics.filter({ onlyRelevant: true, operators: ops })
+      .filter(function (x) {
+        return E.parseRelic(x, 0).mods.some(function (m) { return m.bucket === 'panel'; });
+      });
+    var relicN = 0;
+    cands.slice(0, 8).forEach(function (x) {
+      if (state.relics[x.id]) return;
+      state.relics[x.id] = { stage: 0, stack: 0 };
+      relicN++;
+    });
+    saveNow();
+    renderAll();
+    toast('已载入示例：' + picked + ' 名干员 + ' + relicN + ' 件藏品');
+  }
   // 战斗状态页的收尾摘要：既填住下半部分的空白，也回答「现在有几项没吃到」
   function renderCtxImpact(sum) {
     var box = document.getElementById('ctxImpact');
@@ -584,6 +708,12 @@
   }
 
   // ---------- 藏品列表 ----------
+  // 键盘流用到的两个状态：当前渲染出来的藏品顺序，以及高亮位置。
+  // cursorId 而不是下标：toggleRelic 会重建整个列表，下标会漂，id 不会。
+  var relicRows = [];
+  var relicCursor = -1;
+  var cursorId = '';
+
   function renderCats() {
     var box = document.getElementById('catFilter');
     box.innerHTML = '';
@@ -614,25 +744,63 @@
     return String((t && t.className) || '').indexOf('relic-name') >= 0;
   }
 
+  // 相关性表缓存：251 件 × 每件若干修正项，每次按键都重算是浪费。
+  // 相关性只取决于「谁的编队」（scope 覆盖的是职业/名字，不是数值），
+  // 所以用干员名拼出的签名做 key，编队一变才重算。
+  var relCache = { key: '', map: null };
+  function relevanceMap(squadOps) {
+    if (!squadOps || !squadOps.length) return null;
+    var key = squadOps.map(function (o) { return o.name; }).sort().join(',');
+    if (relCache.key === key && relCache.map) return relCache.map;
+    var map = Object.create(null);
+    Relics.all().forEach(function (r) {
+      if (Relics.affectsAny(r, squadOps)) map[r.id] = 1;
+    });
+    relCache.key = key;
+    relCache.map = map;
+    return map;
+  }
+
   function renderRelicList() {
     var list = document.getElementById('relicList');
     var keepScroll = list.scrollTop || 0;
     list.innerHTML = '';
 
-    var rows = Relics.filter({
+    var squadOps = state.squad.map(function (o) { return OP.toCalcInput(o); });
+    var relMap = relevanceMap(squadOps);
+    var onlyRel = state.ui.onlyRelevant === true && !!relMap;
+    var baseOpts = {
       search: state.ui.search,
       category: state.ui.cat,
       rarity: state.ui.rarity,
       onlySelected: state.ui.onlySelected,
       onlyMatched: state.ui.onlyMatched,
       selectedMap: state.relics
-    });
+    };
+    var rows = Relics.filter(Object.assign({}, baseOpts, {
+      onlyRelevant: onlyRel,
+      operators: squadOps
+    }));
+    // 淡化了几件：只数「真的被淡化」的，已选中的即使无关也不淡化（见下面的 off 类名），
+    // 所以这里必须跳过已选，否则提示条的件数会比肉眼看到的多
+    var offCount = 0;
+    if (relMap) {
+      Relics.filter(baseOpts).forEach(function (r) {
+        if (!relMap[r.id] && !state.relics[r.id]) offCount++;
+      });
+    }
+    renderScopeNote(onlyRel, offCount, squadOps.length);
 
     var frag = document.createDocumentFragment();
+    relicRows = rows;
     rows.forEach(function (r) {
       var sel = state.relics[r.id];
       var card = el('div', 'relic' + (sel ? ' selected' : ''));
       card.dataset.id = r.id;
+      // 稀有度色条靠类名，紧凑瓦片里标签是隐藏的
+      card.classList.add('r' + (r.rarity || 0));
+      // 与本队无关：淡化但仍可点。藏起来会让人以为藏品没生效，淡化只是让相关的先跳出来
+      if (relMap && !relMap[r.id] && !sel) card.classList.add('off');
 
       var head = el('div', 'relic-head');
       var cb = document.createElement('input');
@@ -733,6 +901,77 @@
     if (!rows.length) {
       list.appendChild(el('p', 'empty', '没有匹配的藏品，换个关键词试试。'));
     }
+    applyRelicCursor();
+  }
+
+  // 收敛提示条。两种模式都要说清「你看到的是不是全部」：
+  //   淡化模式 —— 全都在，无关的变灰，给一个「只看这些」
+  //   收敛模式 —— 无关的不画，给一个「显示全部」
+  // 没有干员时整条不显示：没有编队就没有「影响谁」这回事。
+  function renderScopeNote(onlyRel, offCount, squadSize) {
+    var note = document.getElementById('relicScopeNote');
+    if (!note) return;
+    note.innerHTML = '';
+    if (!squadSize) return;
+    if (onlyRel) {
+      note.appendChild(document.createTextNode('只看影响本队的藏品'));
+      var back = el('button', 'tiny', '显示全部');
+      back.onclick = function () { state.ui.onlyRelevant = false; renderRelicList(); };
+      note.appendChild(back);
+    } else {
+      note.appendChild(document.createTextNode(
+        offCount > 0 ? '淡化的 ' + offCount + ' 件与本队无关（仍可勾选）' : '全部藏品都影响本队'));
+      if (offCount > 0) {
+        var b = el('button', 'tiny', '只看这些');
+        b.title = '把与本队无关的收起来';
+        b.onclick = function () { state.ui.onlyRelevant = true; renderRelicList(); };
+        note.appendChild(b);
+      }
+    }
+  }
+
+  // 列表重建后把高亮恢复到同一个 id 上（光标不该因为「选中了一件」就跳走）
+  function applyRelicCursor() {
+    relicCursor = -1;
+    if (!cursorId) return;
+    for (var i = 0; i < relicRows.length; i++) {
+      if (relicRows[i].id === cursorId) { relicCursor = i; break; }
+    }
+    if (relicCursor < 0) return;
+    var list = document.getElementById('relicList');
+    var node = list && list.children[relicCursor];
+    if (node && node.classList) node.classList.add('cursor');
+  }
+
+  function moveRelicCursor(step) {
+    if (!relicRows.length) return;
+    var next;
+    if (relicCursor < 0) next = step > 0 ? 0 : relicRows.length - 1;
+    else next = Math.max(0, Math.min(relicRows.length - 1, relicCursor + step));
+    relicCursor = next;
+    cursorId = relicRows[next].id;
+    var list = document.getElementById('relicList');
+    for (var i = 0; i < list.children.length; i++) {
+      if (list.children[i].classList) list.children[i].classList.remove('cursor');
+    }
+    var node = list.children[next];
+    if (!node) return;
+    if (node.classList) node.classList.add('cursor');
+    // block:'nearest' —— 只在超出可视区时滚动，连续按 ↓ 不会把列表抖来抖去
+    if (node.scrollIntoView) node.scrollIntoView({ block: 'nearest' });
+  }
+
+  // Enter：切换高亮项的选中状态。没有高亮时取第一项，让「输入 + 回车」一步到位。
+  function toggleRelicAtCursor() {
+    if (!relicRows.length) return false;
+    if (relicCursor < 0) {
+      relicCursor = 0;
+      cursorId = relicRows[0].id;
+    }
+    var r = relicRows[relicCursor];
+    if (!r) return false;
+    toggleRelic(r.id, !state.relics[r.id]);
+    return true;
   }
 
   // ---------- 编队卡片 ----------
@@ -1004,7 +1243,9 @@
 
   function renderSquadTable() {
     var card = el('div', 'sum-card squad-table');
-    card.appendChild(el('h3', null, '编队面板对照'));
+    var head = el('h3', null, '编队面板对照');
+    head.appendChild(el('span', 'th-note', '最终值 · 变化量 · 涨幅（悬停看基础值）'));
+    card.appendChild(head);
     if (!state.squad.length) {
       card.appendChild(el('div', 'empty', '编队为空，先到「编队」页加人。'));
       return card;
@@ -1028,10 +1269,23 @@
       tr.appendChild(el('td', 'muted', op.profession || ''));
       TABLE_ROWS.forEach(function (r) {
         var dec = S.decimalsOf(r[0]);
+        var b = num(res.base[r[0]]);
+        var f = num(res.final[r[0]]);
         var d = num(res.delta[r[0]]);
         var td = el('td', 'num');
-        td.appendChild(el('span', 'f', fmt(num(res.final[r[0]]), dec)));
-        if (d !== 0) td.appendChild(el('span', d > 0 ? 'up' : 'down', signed(d, dec)));
+        td.appendChild(el('span', 'f', fmt(f, dec)));
+        if (d !== 0) {
+          td.appendChild(el('span', d > 0 ? 'up' : 'down', signed(d, dec)));
+          // 涨幅：基数有意义时才给（攻速 100 加 5 是 +5%，费用 0 加 1 不是「+∞%」）
+          if (b > 0) {
+            var p = d / b * 100;
+            td.appendChild(el('span', 'pc' + (d > 0 ? ' up' : ' down'),
+              (p > 0 ? '+' : '') + (Math.round(p * 10) / 10) + '%'));
+          }
+          td.title = fmt(b, dec) + ' → ' + fmt(f, dec);
+        } else {
+          td.title = fmt(b, dec) + '（无变化）';
+        }
         tr.appendChild(td);
       });
       tb.appendChild(tr);
@@ -1073,6 +1327,55 @@
     });
     var keepOk = keep !== '' && Number(keep) < state.squad.length;
     sel.value = keepOk ? keep : '';
+    renderDmgFromSkill();
+  }
+
+  // 从技能描述里抠倍率。只认「造成相当于攻击力 N% 的伤害」这一种写法：
+  //   「攻击力+80%」是增益（面板已经算进去了），当倍率会重复计算；
+  //   「每段造成…」出现多个不同数值时无法判断该用哪个，直接放弃让人手填。
+  function skillScale(desc) {
+    var re = /相当于攻击力\s*(\d+(?:\.\d+)?)\s*%/g;
+    var hits = [], m;
+    var d = String(desc || '');
+    while ((m = re.exec(d))) hits.push(+m[1]);
+    if (!hits.length) return null;
+    for (var i = 1; i < hits.length; i++) if (hits[i] !== hits[0]) return null;
+    return hits[0] / 100;
+  }
+
+  // 技能下拉跟着「用编队干员的面板」走：换了人，技能列表整体换掉
+  function renderDmgFromSkill() {
+    var sel = document.getElementById('dmgFromSkill');
+    if (!sel) return;
+    var opIdx = document.getElementById('dmgFromOp');
+    var i = opIdx ? opIdx.value : '';
+    var op = (i === '' || i == null) ? null : state.squad[+i];
+    sel.innerHTML = '';
+    var head = document.createElement('option');
+    head.value = '';
+    head.textContent = op ? '用这名干员的技能…' : '先在上面选干员…';
+    sel.appendChild(head);
+    sel._skills = [];
+    if (!op) { sel.disabled = true; return; }
+    sel.disabled = false;
+    var list = OP.skillsOf(op.name) || [];
+    list.forEach(function (sk, k) {
+      var o = document.createElement('option');
+      o.value = String(k);
+      // 名字里带槽位和倍率，扫一眼就知道这个技能会不会动数字
+      var sc = skillScale(sk.desc);
+      o.textContent = (sk.name || ('技能 ' + (k + 1))) +
+        (sc == null ? '' : '（×' + (Math.round(sc * 100) / 100) + '）');
+      sel.appendChild(o);
+      sel._skills.push(sk);
+    });
+    if (!list.length) {
+      var none = document.createElement('option');
+      none.value = '';
+      none.textContent = '这名干员没有技能数据';
+      sel.appendChild(none);
+      sel.disabled = true;
+    }
   }
 
   function renderDmg() {
@@ -1269,15 +1572,21 @@
     c6.appendChild(ul6);
     box.appendChild(c6);
 
-    box.appendChild(renderSquadTable());
+    // 面板对照单独挂在汇总页顶部：先看「谁变强了多少」，再看「这些加成从哪来」
+    var tableBox = document.getElementById('squadTableBox');
+    if (tableBox) {
+      tableBox.innerHTML = '';
+      tableBox.appendChild(renderSquadTable());
+    }
 
     // 角标与条件摘要跟着汇总一起刷新：所有会改变结果的路径最终都会走到这里
     renderBadges(s);
+    renderVerdict(s);
     renderCtxImpact(s);
     renderCtxNeed(mods);
     renderCtxUnmet(s);
     renderDmg();
-}
+  }
 
   // ---------- 编队槽位条 ----------
   // 12 个固定槽位：空槽是「添加入口」，满槽是「定位到卡片 + 一键移出」。
@@ -1495,6 +1804,8 @@
     renderSummary();
     renderPresets();
     renderPicker();
+    // 藏品侧的淡化标记跟着编队走：换了人，「与本队无关」的那批也变了
+    renderRelicList();
   }
 
   // ---------- 弹窗 ----------
@@ -1894,6 +2205,63 @@
     });
   }
 
+  // ---------- 批量录入 ----------
+  // 真实场景：从攻略 / 群聊里抄一串藏品名，一件件点太慢。
+  // 匹配顺序：编号/精确名 → 归一化（去空格与括号）→ 包含；匹配不到的**原样列出**，不静默丢。
+  function normRelicName(s) {
+    return String(s || '').replace(/[\s·・\-—_（）()【】\[\]]/g, '').toLowerCase();
+  }
+
+  function matchRelicToken(tok) {
+    // 「1. 折戟-锋刃」这类带序号的粘贴内容，先剥掉序号
+    var t = String(tok || '').replace(/^\s*\d+[.、)]\s*/, '').trim();
+    if (!t) return null;
+    var all = Relics.all();
+    var hit = null;
+    all.forEach(function (r) { if (!hit && (r.name === t || r.id === t)) hit = r; });
+    if (hit) return hit;
+    var nt = normRelicName(t);
+    if (!nt) return null;
+    all.forEach(function (r) { if (!hit && normRelicName(r.name) === nt) hit = r; });
+    if (hit) return hit;
+    var cands = all.filter(function (r) { return normRelicName(r.name).indexOf(nt) >= 0; });
+    return cands.length ? cands[0] : null;
+  }
+
+  function showPasteRelics() {
+    openModal(function (b) {
+      b.appendChild(el('h2', null, '批量录入藏品'));
+      b.appendChild(el('p', null, '粘贴藏品名，换行或「、，；」空格分隔都行。也可以直接贴编号，如 040。'));
+      var ta = document.createElement('textarea');
+      ta.placeholder = '折戟-锋刃\n猎印\n残弩-新典训';
+      b.appendChild(ta);
+      var btn = el('button', 'primary', '解析并勾选');
+      btn.style.marginTop = '10px';
+      var out = el('p', 'hint', '');
+      btn.onclick = function () {
+        var toks = String(ta.value || '').split(/[\n\r、,，;；\s]+/).filter(function (x) { return x.trim(); });
+        if (!toks.length) { out.textContent = '没有可解析的内容。'; return; }
+        var added = 0, existed = 0, miss = [];
+        toks.forEach(function (tok) {
+          var r = matchRelicToken(tok);
+          if (!r) { miss.push(tok); return; }
+          if (state.relics[r.id]) { existed++; return; }
+          state.relics[r.id] = { stage: 0, stack: 0 };
+          added++;
+        });
+        save();
+        renderRelicList();
+        renderSquad();
+        renderSummary();
+        out.textContent = '已勾选 ' + added + ' 件' +
+          (existed ? '（' + existed + ' 件原本已选）' : '') +
+          (miss.length ? '；' + miss.length + ' 件未找到：' + miss.join('、') : '');
+      };
+      b.appendChild(btn);
+      b.appendChild(out);
+    });
+  }
+
   function showExport() {
     openModal(function (b) {
       b.appendChild(el('h2', null, '导出配置'));
@@ -2069,6 +2437,173 @@
     return true;
   }
 
+  // ---------- 技能查询（独立于编队与藏品） ----------
+  // 不选藏品、不建编队也能用：开局想确认「这个技能专三多少 SP」「倍率是多少」时，
+  // 不用先配一套东西出来。#skill=干员名 可以直接分享给队友。
+  function skillSlotLabel(sk) {
+    var slot = num(sk && sk.slot);
+    return slot ? (slot + ' 技能') : '技能';
+  }
+
+  function skillMetaText(sk) {
+    var parts = [];
+    if (sk.chargeType) parts.push(sk.chargeType);
+    if (sk.activation) parts.push(sk.activation);
+    if (num(sk.duration)) parts.push('持续 ' + num(sk.duration) + 's');
+    if (num(sk.spCost)) {
+      parts.push('SP ' + num(sk.spCost) + (num(sk.spCost7) ? '（专三 ' + num(sk.spCost7) + '）' : ''));
+    }
+    if (num(sk.initSp)) parts.push('初始 ' + num(sk.initSp));
+    if (num(sk.maxLevel)) parts.push('专精上限 ' + num(sk.maxLevel));
+    return parts.join(' · ');
+  }
+
+  function skillCard(op, sk) {
+    var card = el('div', 'skill-card');
+    var head = el('div', 'skill-card-head');
+    head.appendChild(el('h4', null, sk.name || '未命名技能'));
+    head.appendChild(el('span', 'tag', skillSlotLabel(sk)));
+    if (num(sk.unlockElite)) head.appendChild(el('span', 'tag', 'E' + num(sk.unlockElite) + ' 解锁'));
+    var sc = skillScale(sk.desc);
+    if (sc != null) head.appendChild(el('span', 'tag ok', '×' + (Math.round(sc * 100) / 100)));
+    card.appendChild(head);
+
+    var meta = skillMetaText(sk);
+    if (meta) card.appendChild(el('div', 'skill-meta', meta));
+    card.appendChild(el('p', 'skill-desc', sk.desc || '（这条技能没有描述）'));
+
+    var acts = el('div', 'skill-acts');
+    if (sc != null) {
+      var use = el('button', 'tiny primary', '按 ×' + (Math.round(sc * 100) / 100) + ' 算伤害');
+      use.onclick = function () {
+        state.ctx.dmgScale = Math.round(sc * 100) / 100;
+        // 攻击力也跟着这名干员的最终面板走，否则算出来的数没意义
+        var idx = -1;
+        state.squad.forEach(function (o, i) { if (o.name === op.name) idx = i; });
+        if (idx >= 0) {
+          var res = getResults()[idx];
+          var atk = res && res.final ? res.final.atk : 0;
+          if (atk) state.ctx.dmgAtk = Math.round(num(atk));
+        }
+        save();
+        syncDmgInputs();
+        renderDmg();
+        setTab('summary');
+        toast('已填入伤害估算' + (idx >= 0 ? '（含' + op.name + '的攻击力）' : '，攻击力请手填'));
+      };
+      acts.appendChild(use);
+    }
+    var link = el('button', 'tiny', '复制这个技能的链接');
+    link.onclick = function () { showSkillLink(op.name); };
+    acts.appendChild(link);
+    card.appendChild(acts);
+    return card;
+  }
+
+  function renderSkillPane() {
+    var box = document.getElementById('skillBody');
+    if (!box) return;
+    box.innerHTML = '';
+    var hint = document.getElementById('skillHint');
+    var name = state.ui.skillOp;
+    var op = name ? OP.getByName(name) : null;
+
+    if (!op) {
+      state.ui.skillOp = '';
+      var q = String(state.ui.skillSearch || '').trim();
+      var hits = OP.search(q, {});
+      if (hint) hint.textContent = '共 ' + hits.length + ' 名' + (q ? '匹配「' + q + '」' : '');
+      box.appendChild(el('p', 'pane-lead',
+        '选一名干员看技能数值：充能类型、持续、SP（含专三）、描述，以及能从描述里读出的倍率。'));
+      if (!hits.length) {
+        box.appendChild(el('p', 'empty', '没有匹配的干员，换个关键词试试。'));
+        return;
+      }
+      var grid = el('div', 'skill-ops');
+      state.ui.skillFirst = hits[0] ? hits[0].name : '';
+      hits.slice(0, 120).forEach(function (o) {
+        var b = el('button', 'skill-op');
+        b.appendChild(el('span', 'so-name', o.name));
+        b.appendChild(el('span', 'so-prof',
+          (o.profession || '') + ' · ' + (num(o.rarity) || 0) + '★'));
+        b.onclick = function () { state.ui.skillOp = o.name; renderSkillPane(); };
+        grid.appendChild(b);
+      });
+      box.appendChild(grid);
+      if (hits.length > 120) {
+        box.appendChild(el('p', 'hint', '只显示前 120 名，用搜索缩小范围'));
+      }
+      return;
+    }
+
+    var skills = OP.skillsOf(op.name) || [];
+    if (hint) hint.textContent = (op.profession || '') +
+      (op.subProfession ? ' / ' + op.subProfession : '') + ' · ' + (num(op.rarity) || 0) + '★';
+    var head = el('div', 'skill-head');
+    head.appendChild(el('h3', null, op.name));
+    var back = el('button', 'tiny', '换一名');
+    back.onclick = function () { state.ui.skillOp = ''; renderSkillPane(); };
+    head.appendChild(back);
+    var link2 = el('button', 'tiny', '复制链接');
+    link2.onclick = function () { showSkillLink(op.name); };
+    head.appendChild(link2);
+    box.appendChild(head);
+
+    if (!skills.length) {
+      box.appendChild(el('p', 'empty', '这名干员没有技能数据。'));
+      return;
+    }
+    skills.forEach(function (sk) { box.appendChild(skillCard(op, sk)); });
+  }
+
+  function showSkillLink(name) {
+    var url = location.href.split('#')[0] + '#skill=' + encodeURIComponent(name);
+    var copied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url);
+        copied = true;
+      }
+    } catch (e) { copied = false; }
+    openModal(function (b) {
+      b.appendChild(el('h2', null, name + ' · 技能'));
+      b.appendChild(el('p', null, copied
+        ? '链接已复制。对方打开直接落到这名干员的技能页，不需要先配编队。'
+        : '复制下面的链接，打开直接落到这名干员的技能页。'));
+      var ta = document.createElement('textarea');
+      ta.value = url;
+      ta.setAttribute('readonly', 'readonly');
+      ta.setAttribute('aria-label', '技能页链接');
+      b.appendChild(ta);
+      var row = el('div', 'modal-actions');
+      var cp = el('button', 'primary', '选中链接');
+      cp.onclick = function () { ta.select(); };
+      row.appendChild(cp);
+      b.appendChild(row);
+    });
+  }
+
+  // #skill=干员名：分享链接落地。先切页再渲染，免得用户看到一闪而过的列表。
+  function applyHashSkill() {
+    var h = (typeof location !== 'undefined' && location.hash) || '';
+    if (h.indexOf('#skill=') !== 0) return false;
+    var raw = h.slice(7), name = raw;
+    try { name = decodeURIComponent(raw); } catch (e) { name = raw; }
+    var op = name ? OP.getByName(name) : null;
+    if (!op) {
+      toast('链接里的干员没找到：' + (name || '（空）'));
+      return false;
+    }
+    state.ui.skillOp = op.name;
+    setTab('skill');
+    renderSkillPane();
+    try {
+      history.replaceState(null, '', location.pathname + location.search);
+    } catch (e) { /* 老浏览器忽略 */ }
+    toast('已打开' + op.name + '的技能页');
+    return true;
+  }
+
   // ---------- 战斗状态 ----------
   function renderCtxInputs() {
     var c = state.ctx;
@@ -2152,6 +2687,7 @@
     syncDmgInputs();
     renderPresets();
     renderPickerFilters();
+    renderSkillPane();
     renderPicker();
   }
 
@@ -2318,6 +2854,37 @@
       renderRelicList();
     }, SEARCH_DELAY);
     si.addEventListener('input', onRelicSearch);
+    // 键盘流：输入过滤 → ↑↓ 移动 → Enter 选中 → Esc 清空。
+    // 目标是不碰鼠标连续录十件藏品；焦点始终留在搜索框里。
+    si.addEventListener('keydown', function (e) {
+      var k = (e && e.key) || '';
+      if (k === 'ArrowDown' || k === 'ArrowUp') {
+        if (e.preventDefault) e.preventDefault();
+        moveRelicCursor(k === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+      if (k === 'Enter') {
+        if (e.preventDefault) e.preventDefault();
+        // 输入后立刻回车时防抖还没跑，先按当前输入框的值渲染一次，避免选中上一条结果
+        state.ui.search = si.value;
+        renderRelicList();
+        if (toggleRelicAtCursor()) {
+          // 提交后清空并保持焦点，接着打下一件的名字
+          si.value = '';
+          state.ui.search = '';
+          renderRelicList();
+        }
+        return;
+      }
+      if (k === 'Escape') {
+        if (e.preventDefault) e.preventDefault();
+        si.value = '';
+        state.ui.search = '';
+        cursorId = '';
+        relicCursor = -1;
+        renderRelicList();
+      }
+    });
 
     document.getElementById('onlySelected').addEventListener('change', function () {
       state.ui.onlySelected = this.checked; renderRelicList();
@@ -2349,6 +2916,7 @@
     var dmgSel = document.getElementById('dmgFromOp');
     if (dmgSel) {
       dmgSel.addEventListener('change', function () {
+        renderDmgFromSkill();
         if (dmgSel.value === '') return;
         var i = +dmgSel.value;
         var results = getResults();
@@ -2361,6 +2929,49 @@
       });
     }
 
+    // 「用这名干员的技能」：把技能描述里的倍率填进倍率框。
+    // 只认「造成相当于攻击力 N% 的伤害」这一种写法 —— 「攻击力+80%」是增益，
+    // 当成倍率会把伤害算高一大截。认不出就明说，不猜。
+    var skillSel = document.getElementById('dmgFromSkill');
+    if (skillSel) {
+      skillSel.addEventListener('change', function () {
+        var note = document.getElementById('dmgSkillNote');
+        if (note) note.textContent = '';
+        if (skillSel.value === '') return;
+        var sk = skillSel._skills && skillSel._skills[+skillSel.value];
+        if (!sk) return;
+        var scale = skillScale(sk.desc);
+        if (note) {
+          note.textContent = (sk.name || '技能') + '：' + (sk.desc || '（无描述）') +
+            (sk.duration ? ' · 持续 ' + sk.duration + 's' : '') +
+            (sk.spCost ? ' · SP ' + sk.spCost : '');
+        }
+        if (scale == null) {
+          toast('这条技能描述里没有「相当于攻击力 N%」，倍率请手填');
+          return;
+        }
+        state.ctx.dmgScale = Math.round(scale * 100) / 100;
+        save();
+        syncDmgInputs();
+        renderDmg();
+      });
+    }
+
+    document.getElementById('btnPaste').onclick = showPasteRelics;
+    // 技能页搜索：输入即筛，回车打开第一条
+    var skSearch = document.getElementById('skillSearch');
+    if (skSearch) {
+      var onSkillSearch = debounce(function () {
+        state.ui.skillSearch = skSearch.value;
+        renderSkillPane();
+      }, SEARCH_DELAY);
+      skSearch.addEventListener('input', onSkillSearch);
+      skSearch.addEventListener('keydown', function (e) {
+        if (((e && e.key) || '') !== 'Enter') return;
+        if (e.preventDefault) e.preventDefault();
+        if (state.ui.skillFirst) { state.ui.skillOp = state.ui.skillFirst; renderSkillPane(); }
+      });
+    }
     document.getElementById('btnHelp').onclick = showHelp;
     document.getElementById('btnShare').onclick = showShare;
     document.getElementById('btnImport').onclick = showImport;
@@ -2461,6 +3072,8 @@
 
     // 分享链接优先级最高：链接里的配置就是要看的那一份，放在最后覆盖前面的提示
     if (applyHashConfig()) renderAll();
+    // #skill= 单独一条：它不改配置，只决定落在哪一页，所以不跟 #cfg= 互斥
+    applyHashSkill();
 
     // 离线缓存：只在 http(s) 下注册（file:// 不支持 Service Worker）
     if ('serviceWorker' in navigator &&

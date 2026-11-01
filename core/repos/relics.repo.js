@@ -15,7 +15,9 @@
  *   RelicRepo.getById(id)              含 stages 的完整对象
  *   RelicRepo.index()                  {id: relic}，给 engine.buildModifiers 用
  *   RelicRepo.filter(opts)             opts: {search, category, rarity,
- *                                            onlySelected, onlyMatched, selectedMap}
+ *                                            onlySelected, onlyMatched, selectedMap,
+ *                                            onlyRelevant, operators}
+ *   RelicRepo.affectsAny(relic, ops)   这件藏品会不会作用到这支队伍（宁多勿少）
  *   RelicRepo.toSelection(stateRelics) {id:{stage,stack}} → [{id,stage,stack}]
  *   RelicRepo.sanitizeSelection(raw)   导入/存档校验：丢掉未知 id、夹紧数值
  * ==========================================================================*/
@@ -87,12 +89,42 @@
     return E.parseRelic(r, 0).mods.length > 0;
   }
 
+  // 「这件藏品会不会作用到本队」——给「只看影响本队」用。
+  // 判据宁多勿少：条件类、跨藏品前置、敌方作用域、纯特殊效果，一律保留。
+  // 误留只是多一件要划过去，误藏会让玩家以为藏品没生效。
+  function affectsAny(r, ops) {
+    var E = global.RelicEngine;
+    if (!E || !ops || !ops.length) return true;
+    var parsed = E.parseRelic(r, 0);
+    if (!parsed.mods.length) return true;            // 招募/掉落/结局类：仍然要能记录
+    for (var i = 0; i < parsed.mods.length; i++) {
+      var m = parsed.mods[i];
+      if (m.bucket === 'special') return true;
+      if (m.scope && m.scope.base === 'enemy') return true;
+      if (m.cond) {
+        var c = m.cond;
+        if (c.type === 'hasRelic') return true;
+        // 复合条件里可能嵌着 hasRelic，展开一层看
+        if (c.type === 'all' && c.of) {
+          for (var k = 0; k < c.of.length; k++) {
+            if (c.of[k] && c.of[k].type === 'hasRelic') return true;
+          }
+        }
+      }
+      for (var j = 0; j < ops.length; j++) {
+        if (E.scopeCovers(m.scope, ops[j])) return true;
+      }
+    }
+    return false;
+  }
+
   function filter(opts) {
     opts = opts || {};
     var q = String(opts.search || '').trim().toLowerCase();
     var cat = opts.category || '全部';
     var rarity = (opts.rarity == null) ? '' : String(opts.rarity);
     var sel = opts.selectedMap || {};
+    var ops = opts.operators || [];
 
     return list.filter(function (r) {
       if (!r) return false;
@@ -100,6 +132,8 @@
       if (rarity !== '' && String(r.rarity) !== rarity) return false;
       if (opts.onlySelected && !sel[r.id]) return false;
       if (opts.onlyMatched && !hasMods(r)) return false;
+      // 已选中的藏品永远不隐藏：否则玩家取消不了它
+      if (opts.onlyRelevant && !sel[r.id] && !affectsAny(r, ops)) return false;
       if (q && haystack(r).indexOf(q) < 0) return false;
       return true;
     });
@@ -137,6 +171,7 @@
     getById: getById,
     index: index,
     filter: filter,
+    affectsAny: affectsAny,
     toSelection: toSelection,
     sanitizeSelection: sanitizeSelection
   };

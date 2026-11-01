@@ -4,7 +4,7 @@
   "schemaVersion": 3,
   "gameVersion": "集成战略 #6 沉沦者的黑流树海（rogue_6）",
   "dataHash": "sha256:f4c7b55f4e4582bb",
-  "builtAt": "2026-10-29T10:46:53Z",
+  "builtAt": "2026-11-01T11:00:14Z",
   "source": {
    "relics": "data/relics.json ← tools/build_relics_official.py ← raw/roguelike_topic_table.json",
    "operators": "data/operators.json ← tools/build_operators.py ← raw/character_table.json、skill_table.json、uniequip_table.json、battle_equip_table.json、range_table.json"

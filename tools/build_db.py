@@ -10,72 +10,91 @@
     data/is6db.js    浏览器加载的那一份（window.IS6_DB = {...}）
     data/is6db.json  同一份内容的可读镜像，给工具链和 diff 用
 
-表结构以 core/db/schema.js 为准，本文件末尾的 TABLE_SPEC 是它的 Python 镜像，
-tools/check_enums.py 会比对两边，漂移了直接报错。
+表结构只有一份：core/db/schema.js。以前本文件里抄了一份 TABLE_SPEC 镜像，
+靠 tools/check_enums.py 比对两边有没有漂移 —— 那是「两处真相 + 一个哨兵」。
+现在直接读 JS 里的列定义，哨兵只留「别再抄回来」这一条。
 
 用法：
     python tools/build_db.py            # 装配并写入
     python tools/build_db.py --check    # 只校验不写盘
+
+依赖：需要本机有 node（仓库的测试与发布流程本来就依赖它）。
 """
 import hashlib
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
 
-SCHEMA_VERSION = 3
+SCHEMA_JS = os.path.join(ROOT, "core", "db", "schema.js")
 ARTIFACT_NAME = "is6db"
 
 
-# ---------------------------------------------------------------- 表结构镜像
-# 与 core/db/schema.js 一一对应：表名 → (主键, [列名])
-TABLE_SPEC = {
-    "relics": ("id", [
-        "id", "name", "category", "rarity", "icon", "flags", "desc",
-        "condition", "note", "obtain", "stageCount",
-    ]),
-    "relic_stages": (["relicId", "stage"], [
-        "relicId", "stage", "name", "text", "mods", "special", "parsedBy",
-    ]),
-    "operators": ("id", [
-        "id", "name", "profession", "subProfession", "position", "rarity",
-        "elite", "level", "hp", "atk", "def", "res", "aspd", "interval",
-        "block", "cost", "spRecover", "initSp", "redeploy",
-        "favorHp", "favorAtk", "favorDef",
-        "displayNumber", "appellation", "obtain", "tags", "trait",
-        "rangeId", "potential",
-    ]),
-    "operator_phases": (["id", "elite"], [
-        "id", "elite", "level", "hp", "atk", "def", "res", "aspd",
-        "interval", "cost", "block", "redeploy", "rangeId",
-    ]),
-    "operator_skills": (["id", "slot"], [
-        "id", "slot", "skillId", "name", "chargeType", "activation",
-        "duration", "spCost", "initSp", "spCost7", "initSp7", "desc",
-        "rangeId", "maxLevel", "unlockElite",
-    ]),
-    "operator_talents": (["id", "idx"], [
-        "id", "idx", "name", "desc", "unlockElite", "unlockLevel",
-    ]),
-    "operator_modules": (["id", "moduleId"], [
-        "id", "moduleId", "name", "type", "typeName", "unlockElite", "unlockLevel",
-    ]),
-    "operator_module_levels": (["id", "moduleId", "level"], [
-        "id", "moduleId", "level", "hp", "atk", "def", "res", "aspd",
-        "interval", "cost", "block", "redeploy", "desc",
-    ]),
-    "ranges": ("id", [
-        "id", "direction", "grids",
-    ]),
+# ---------------------------------------------------------------- 表结构
+# 在 Node 里跑一遍 core/db/schema.js，把 game 表的主键与列名导成 JSON。
+# 为什么不在 Python 里用正则解析：注释、尾逗号、中文列名、以后可能出现的
+# 计算属性，都会让手写解析器悄悄漏列 —— 漏一列等于产物少一列，且不报错。
+_DUMP_SCHEMA_JS = r"""
+var fs = require('fs');
+var vm = require('vm');
+var sandbox = {};
+vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(process.argv[1], 'utf8'), sandbox, { filename: 'schema.js' });
+var S = sandbox.DBSchema;
+if (!S || !S.TABLES) {
+  console.error('core/db/schema.js 没有导出 DBSchema');
+  process.exit(1);
 }
+var out = { version: S.VERSION, tables: {} };
+S.GAME_TABLES.forEach(function (n) {
+  out.tables[n] = { pk: S.TABLES[n].pk, columns: Object.keys(S.TABLES[n].columns) };
+});
+process.stdout.write(JSON.stringify(out));
+"""
+
+
+def load_table_spec(path=None):
+    """返回 (版本号, {表名: (主键, [列名])})，全部来自 core/db/schema.js。"""
+    node = shutil.which("node")
+    if not node:
+        raise SystemExit(
+            "找不到 node。表结构要从 core/db/schema.js 读，需要 Node.js —— "
+            "装一个再跑（或直接跑 python tools/update_db.py，它会先检查）。")
+    js = path or SCHEMA_JS
+    if not os.path.exists(js):
+        raise SystemExit("缺少 %s" % js)
+    proc = subprocess.run([node, "-e", _DUMP_SCHEMA_JS, js],
+                          capture_output=True)
+    if proc.returncode != 0:
+        raise SystemExit("读表结构失败：\n%s" % proc.stderr.decode("utf-8", "replace").strip())
+    try:
+        doc = json.loads(proc.stdout.decode("utf-8"))
+    except ValueError as e:
+        raise SystemExit("core/db/schema.js 导出的不是合法 JSON：%s" % e)
+    if not doc.get("tables"):
+        raise SystemExit("core/db/schema.js 里没有 game 表")
+    return doc["version"], {n: (d["pk"], d["columns"]) for n, d in doc["tables"].items()}
+
+
+SCHEMA_VERSION, TABLE_SPEC = load_table_spec()
 
 
 def load_json(name):
     path = os.path.join(DATA, name)
+    if not os.path.exists(path):
+        # 中间产物是可以删的缓存，但删了不会自己长回来：这里必须说清下一步做什么，
+        # 否则只会甩一个 FileNotFoundError，看起来像仓库坏了。
+        raise SystemExit(
+            "缺少中间产物 data/%s。\n"
+            "  · 有 raw/ 官方表 → python tools/update_db.py\n"
+            "  · 只想重装表     → 从版本库取回 data/%s 再跑本脚本\n"
+            "  · 数据从哪来     → 见 data/README.md" % (name, name))
     with io.open(path, encoding="utf-8") as f:
         return json.load(f)
 
@@ -433,8 +452,15 @@ def main():
         print("与上一份产物相比：无变化")
 
     if check_only:
-        print("--check：只校验，未写盘")
-        return
+        # --check 的意义不是「跑一遍看看会不会崩」，而是「磁盘上的产物还是不是最新的」。
+        # 比指纹而不是比 mtime：git checkout 会改 mtime，改不动指纹。
+        disk_hash = (prev or {}).get("meta", {}).get("dataHash")
+        if disk_hash and disk_hash != data_hash:
+            print("产物已过期：磁盘 %s ≠ 重算 %s" % (disk_hash, data_hash))
+            print("--check：校验失败，请重跑 python tools/build_db.py")
+            return 1
+        print("--check：产物与重算结果一致，未写盘")
+        return 0
 
     out_json = os.path.join(DATA, ARTIFACT_NAME + ".json")
     with io.open(out_json, "w", encoding="utf-8") as f:
@@ -463,4 +489,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

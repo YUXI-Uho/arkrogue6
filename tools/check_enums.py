@@ -20,7 +20,13 @@
        （否则引擎会静默丢弃该修正项 —— 这是历史上真实踩过的坑）
     4. 属性：core/schema.js 里 bucket='panel' 且 settles!=False 的 key，
        必须能被 engine 结算（通过 js/engine.js 里出现 final.<key> 判断，弱校验）
+    5. 表结构：core/db/schema.js 与 tools/build_db.py 的表名/主键/列一致
+    6. 产物：data/is6db.json 的列、行数、主键与 meta.counts 自洽
+    7. 入口：index.html 的资源标签版本串一致、文件都在
+    8. 后端：server/ 读同一份表产物，面板字段从 schema 派生（不许再抄一份）
+    9. 覆盖表：data/overrides/relics.json 存在且没被写回构建脚本的字面量
 """
+import io
 import json
 import os
 import re
@@ -142,80 +148,53 @@ def js_tables(src):
     return out
 
 
-def py_table_spec(src):
-    """解析 tools/build_db.py 的 TABLE_SPEC → {表名: (pk 列表, 列名列表)}。"""
-    m = re.search(r"^TABLE_SPEC\s*=\s*\{(.*?)^\}", src, re.S | re.M)
-    if not m:
-        return {}
-    body = m.group(1)
-    out = {}
-    for tm in re.finditer(r"^    \"(\w+)\":\s*\(([\s\S]*?)\),?\s*$", body, re.M):
-        name = tm.group(1)
-        args = tm.group(2)
-        pkm = re.match(r"\s*(\"[^\"]+\"|\[[^\]]*\])", args)
-        if not pkm:
-            continue
-        pk_raw = pkm.group(1)
-        pk = (re.findall(r"\"([^\"]+)\"", pk_raw)
-              if pk_raw.startswith("[") else [pk_raw.strip("\"")])
-        cols = re.findall(r"\"([^\"]+)\"", args[len(pk_raw):])
-        out[name] = (pk, cols)
-    return out
-
-
 def check_schema():
-    """core/db/schema.js（JS）与 tools/build_db.py（Python）的表定义必须一致。"""
-    print("== 5. 表结构两侧一致 ==")
+    """表结构只能有一份：core/db/schema.js。
+
+    以前 build_db.py 里抄了一份 TABLE_SPEC 镜像，这里逐列比对两边。
+    现在镜像没了（build_db 直接在 Node 里读 schema.js），比对项也随之撤掉 ——
+    留下来的只有「别再抄回来」和「产物确实是按 schema 装配的」两条。
+    """
+    print("== 5. 表结构单一来源 ==")
     js_src = read("core/db/schema.js")
     py_src = read("tools/build_db.py")
 
-    js_ver = re.search(r"var\s+VERSION\s*=\s*(\d+)", js_src)
-    py_ver = re.search(r"^SCHEMA_VERSION\s*=\s*(\d+)", py_src, re.M)
-    if not js_ver or not py_ver:
-        problems.append("读不到 schema 版本号（core/db/schema.js 的 VERSION / build_db.py 的 SCHEMA_VERSION）")
-    elif js_ver.group(1) != py_ver.group(1):
-        problems.append("表结构版本不一致：core/db/schema.js=%s，tools/build_db.py=%s"
-                        % (js_ver.group(1), py_ver.group(1)))
+    if re.search(r"^TABLE_SPEC\s*=\s*\{", py_src, re.M):
+        problems.append("tools/build_db.py 又硬编码了 TABLE_SPEC 字面量，应改调 load_table_spec()")
+    if "load_table_spec(" not in py_src:
+        problems.append("tools/build_db.py 没有从 core/db/schema.js 读表结构")
+    if re.search(r"^SCHEMA_VERSION\s*=\s*\d+", py_src, re.M):
+        problems.append("tools/build_db.py 又硬编码了 SCHEMA_VERSION，版本号只在 schema.js 的 VERSION 里写")
 
     tables = js_tables(js_src)
-    spec = py_table_spec(py_src)
     if not tables:
         problems.append("core/db/schema.js 里解析不到 TABLES（正则可能失效）")
         return
-    if not spec:
-        problems.append("tools/build_db.py 里解析不到 TABLE_SPEC（正则可能失效）")
-        return
-
     game = sorted(n for n, d in tables.items() if d["kind"] == "game")
-    user = sorted(n for n, d in tables.items() if d["kind"] == "user")
-    if game != sorted(spec):
-        problems.append("只读表清单不一致：schema.js=%s，build_db.py=%s"
-                        % ("、".join(game), "、".join(spec)))
 
+    # 产物里的表必须与 schema 的 game 表一一对应，列顺序也要一致：
+    # 列顺序变了 dataHash 就变，靠这条能发现「改了 schema 但没重建」。
+    art = json.load(io.open(os.path.join(DATA, "is6db.json"), encoding="utf-8"))
+    built = art.get("tables") or {}
+    if sorted(built) != game:
+        problems.append("产物表清单与 schema 不一致：产物=%s，schema=%s"
+                        % ("、".join(sorted(built)), "、".join(game)))
     for name in game:
-        if name not in spec:
+        if name not in built or not built[name]:
             continue
-        js_pk, py_pk = tables[name]["pk"], spec[name][0]
-        js_cols, py_cols = tables[name]["columns"], spec[name][1]
-        if js_pk != py_pk:
-            problems.append("%s 主键不一致：schema.js=%s，build_db.py=%s"
-                            % (name, js_pk, py_pk))
-        if set(js_cols) != set(py_cols):
-            miss = sorted(set(js_cols) - set(py_cols))
-            extra = sorted(set(py_cols) - set(js_cols))
-            if miss:
-                problems.append("%s：schema.js 有、build_db.py 缺 → %s" % (name, "、".join(miss)))
-            if extra:
-                problems.append("%s：build_db.py 有、schema.js 缺 → %s" % (name, "、".join(extra)))
-        elif js_cols != py_cols:
-            warnings.append("%s 列顺序两侧不同（不影响运行，但 diff 会变脏）" % name)
-        if VERBOSE:
-            print("  [ok] %s  %d 列  主键 %s" % (name, len(js_cols), "+".join(js_pk)))
+        cols = list(built[name][0].keys())
+        if cols != tables[name]["columns"]:
+            problems.append("%s 列与 schema 不符（产物可能没重建）：产物=%s，schema=%s"
+                            % (name, ",".join(cols), ",".join(tables[name]["columns"])))
+        elif VERBOSE:
+            print("  [ok] %s  %d 列  主键 %s"
+                  % (name, len(cols), "+".join(tables[name]["pk"])))
 
-    # 用户表的列不参与 Python 装配（存档在浏览器里），但列数变化要能被看见
-    for name in user:
-        if VERBOSE:
-            print("  [ok] %s  用户表 %d 列（不入产物）" % (name, len(tables[name]["columns"])))
+    # 产物里的 schemaVersion 必须来自 schema.js，不能是另一处手写常量
+    js_ver = re.search(r"var\s+VERSION\s*=\s*(\d+)", js_src)
+    if js_ver and str(art.get("meta", {}).get("schemaVersion")) != js_ver.group(1):
+        problems.append("产物 schemaVersion=%s，schema.js VERSION=%s（没重建？）"
+                        % (art.get("meta", {}).get("schemaVersion"), js_ver.group(1)))
 
     # 存档版本 == 表结构版本：两处各写一份必然漂移，这里钉住
     mig = read("core/db/migrate.js")
@@ -235,13 +214,14 @@ def check_artifact():
 
     meta = art.get("meta") or {}
     tables = art.get("tables") or {}
-    spec = py_table_spec(read("tools/build_db.py"))
+    # 列定义取自 schema.js —— build_db.py 里已经没有镜像可读了
+    schema = js_tables(read("core/db/schema.js"))
+    spec = {n: (d["pk"], d["columns"]) for n, d in schema.items() if d["kind"] == "game"}
 
-    py_ver = re.search(r"^SCHEMA_VERSION\s*=\s*(\d+)",
-                       read("tools/build_db.py"), re.M)
-    if py_ver and meta.get("schemaVersion") != int(py_ver.group(1)):
-        problems.append("产物版本 %s 与 SCHEMA_VERSION %s 不一致，请重新生成"
-                        % (meta.get("schemaVersion"), py_ver.group(1)))
+    js_ver = re.search(r"var\s+VERSION\s*=\s*(\d+)", read("core/db/schema.js"))
+    if js_ver and meta.get("schemaVersion") != int(js_ver.group(1)):
+        problems.append("产物版本 %s 与 schema.js VERSION %s 不一致，请重新生成"
+                        % (meta.get("schemaVersion"), js_ver.group(1)))
 
     if not re.match(r"^sha256:[0-9a-f]{16}$", str(meta.get("dataHash", ""))):
         problems.append("产物缺少数据指纹 dataHash（应为 sha256:16 位十六进制）")
@@ -329,6 +309,109 @@ def check_assets():
     if VERBOSE:
         print("  [ok] %d 个资源引用，版本串 %s，文件全部存在"
               % (len(refs), "、".join(real) if real else "缺失"))
+
+
+def check_server():
+    """后端必须与前端读同一份表产物，且面板字段从 schema 派生。
+
+    这两条都是真实踩过的坑：
+      - server/engine.js 自己写了一份 PANEL_KEYS 数组、server/validate.js 又写了一份
+        PANEL_RANGE，和 core/schema.js 三份并存。新增属性时前端会算、后端静默丢，
+        而本脚本当时只比 JS↔Python，看不见 server/。
+      - 数据侧直接 require data/relics.json + operators.json（中间产物），
+        只重装表、没重跑 build_operators.py 时，前后端会算出不同结果。
+    """
+    print("== 8. 后端数据源 ==")
+    eng = strip_js_comments(read("server/engine.js"))
+    val = strip_js_comments(read("server/validate.js"))
+
+    if re.search(r"PANEL_KEYS\s*=\s*\[", eng):
+        problems.append("server/engine.js 硬编码了 PANEL_KEYS 数组，应改为复用 core/schema.js")
+    if "is6db.json" not in eng:
+        problems.append("server/engine.js 没有读 data/is6db.json（应与前端同一份表产物）")
+    for src in ("relics.json", "operators.json"):
+        if src in eng:
+            problems.append("server/engine.js 直接引用了 data/%s（中间产物），应改读表产物" % src)
+    if "SETTLED_KEYS" not in val and "PANEL_KEYS" not in val:
+        problems.append("server/validate.js 的面板字段没有从 ArkSchema 派生")
+    if VERBOSE and not problems:
+        print("  [ok] 后端读表产物，面板字段来自 ArkSchema")
+
+
+def check_overrides():
+    """覆盖表必须是数据文件，不能又长回 Python 字面量。
+
+    抽出去的理由不是「好看」：OVERRIDES 是唯一一处「人写数值」的地方，
+    埋在 1000 行的构建脚本中间，改一条要读代码、缩进错了整份构建就崩。
+    抽成 JSON 后 diff 干净、非程序员也能改，但很容易在下次改动时图省事又写回去。
+    """
+    print("== 9. 藏品覆盖表 ==")
+    path = "data/overrides/relics.json"
+    if not os.path.exists(os.path.join(ROOT, path)):
+        problems.append("缺少 %s（21 条人工覆盖在这里）" % path)
+        return
+    try:
+        with io.open(os.path.join(ROOT, path), encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as e:                      # noqa: BLE001 —— 就是要报任何解析错
+        problems.append("%s 解析失败：%s" % (path, e))
+        return
+    if not isinstance(data, dict) or not data:
+        problems.append("%s 顶层应为非空对象 {藏品 id: [修正项]}" % path)
+        return
+    bad = [k for k, v in data.items() if not isinstance(v, list) or not v]
+    if bad:
+        problems.append("%s 里这些 id 的值不是非空数组：%s" % (path, "、".join(bad[:5])))
+
+    src = read("tools/build_relics_official.py")
+    if re.search(r"^OVERRIDES\s*=\s*\{", src, re.M):
+        problems.append("tools/build_relics_official.py 又硬编码了 OVERRIDES 字面量，应改读 %s" % path)
+    if "load_overrides" not in src:
+        problems.append("tools/build_relics_official.py 没有走 load_overrides 读覆盖表")
+    if VERBOSE and not problems:
+        print("  [ok] 覆盖表 %d 条，构建脚本从 JSON 读" % len(data))
+
+
+def check_cache_direction():
+    """中间产物是缓存，不能变成源。
+
+    数据流是 raw/ → relics.json / operators.json → is6db.js → 界面。
+    一旦有人让 build_relics_official.py 去「读上一版 relics.json 做增量」，
+    缓存就同时是输入和输出，改错一次就再也回不到干净状态 —— 这条守着方向。
+    """
+    print("== 10. 中间产物是缓存 ==")
+    pairs = [("tools/build_relics_official.py", "relics.json"),
+             ("tools/build_operators.py", "operators.json")]
+    for script, cache in pairs:
+        src = read(script)
+        bad = []
+        for i, line in enumerate(src.split("\n"), 1):
+            if cache not in line or line.lstrip().startswith("#"):
+                continue
+            if "overrides" in line:              # data/overrides/relics.json 是另一回事
+                continue
+            # 只认「这一行真的在开文件」：文档字符串、print、路径拼接都不算
+            if not re.search(r"\b(open|load|load_json|loads)\s*\(", line):
+                continue
+            if '"w"' in line or "'w'" in line:    # 写模式
+                continue
+            bad.append(i)
+        if bad:
+            problems.append("%s 第 %s 行疑似读中间产物 %s —— 缓存只能是输出"
+                            % (script, "、".join(str(n) for n in bad[:3]), cache))
+        elif VERBOSE:
+            print("  [ok] %s 只写 %s" % (script, cache))
+
+    # 旧格式产物（--legacy-js）是调试用的一次性文件，不该留在 data/ 里被误认成数据
+    for stale in ("relics.js", "operators.js"):
+        if os.path.exists(os.path.join(DATA, stale)):
+            problems.append("data/%s 是 --legacy-js 的调试产物，删掉它（界面不加载）" % stale)
+
+    if not os.path.exists(os.path.join(DATA, "README.md")):
+        problems.append("缺少 data/README.md：中间产物与产物的区别得写在它旁边，"
+                        "不然下一个人只能靠猜")
+    elif VERBOSE and not problems:
+        print("  [ok] data/ 下无旧格式残留，说明文档在")
 
 
 def main():
@@ -422,6 +505,9 @@ def main():
     check_schema()
     check_artifact()
     check_assets()
+    check_server()
+    check_overrides()
+    check_cache_direction()
 
     print()
     if warnings:

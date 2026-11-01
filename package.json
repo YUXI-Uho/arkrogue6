@@ -1,0 +1,15 @@
+{
+  "name": "is6-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "IS6 数值计算后端：复用 js/engine.js，零第三方依赖",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "test": "node tests/server.test.js"
+  }
+}

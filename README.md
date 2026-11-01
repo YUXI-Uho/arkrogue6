@@ -110,7 +110,7 @@
 ```
 index.html                入口（12 个 script 标签，顺序即依赖）
 404.html                  自定义 404
-robots.txt                挡住内部目录（raw/ tools/ tests/ review/）
+robots.txt                挡住内部目录（raw/ tools/ tests/ review/ server/）
 manifest.json             PWA 清单（可「添加到主屏幕」）
 sw.js                     Service Worker：导航网络优先，资源缓存优先（离线可用）
 LICENSE                   代码 MIT；游戏数据版权归鹰角，不适用 MIT
@@ -128,10 +128,12 @@ core/
 data/
   is6db.js                表产物（自动生成，浏览器只读这一份）
   is6db.json              同一份内容的可读镜像，给工具链和 diff 用
-  relics.json             藏品中间产物（构建脚本 → build_db.py）
+  relics.json             藏品中间产物（构建脚本 → build_db.py，可删可重建）
   operators.json          干员中间产物（扁平面板 + 嵌套的阶段/技能/天赋/模组 + 攻击范围）
-  relics_wiki.json        PRTS 文案/元数据（中间产物，构建脚本会读）
+  overrides/relics.json   21 条人工数值覆盖（唯一人写的数值，改这里）
+  relics_wiki.json        PRTS 文案/元数据（抓取缓存，构建脚本会读）
   DB_CHANGELOG.md         每次重装表时自动追加的行数/数值变化
+  README.md               哪个文件能删、哪个是人写的、怎么重建
 js/
   effects.js              中文文案 → 修正项（官方数据覆盖不到时的兜底）
   engine.js               结算引擎（优先用官方结构化结果）
@@ -140,8 +142,9 @@ assets/
   style.css               样式
   icon.svg                图标（favicon / PWA 共用）
 tools/                    数据生成脚本 + 一致性校验 + release.py
-tests/                    自测
-deploy/                   部署配置：_headers / vercel.json / nginx 片段 / FILES.txt
+tests/                    自测（引擎 / 数据层 / 界面冒烟 / 后端）
+server/                   可选后端：复用同一套引擎，读同一份表产物（见 server/README.md）
+deploy/                   部署配置：_headers / vercel.json / nginx 片段 / Docker / FILES.txt
 raw/                      抓取缓存（wikitext、游戏数据表、分支映射），不进版本库
 ```
 
@@ -176,7 +179,7 @@ core/db/schema.js   ← 表结构唯一事实来源（DDL）
 | `operators` | 只读 | `id` | 452 | 干员面板，`panel` 拍平成 `hp/atk/def/res/…` 列 + 特性/标签/潜能/范围 |
 | `operator_phases` | 只读 | `id` + `elite` | 1303 | 精英化零/一/二各满级一帧（面板成长曲线） |
 | `operator_skills` | 只读 | `id` + `slot` | 997 | 技能：类型 / SP / 持续 / 专三文案 / 范围 |
-| `operator_talents` | 只读 | `id` + `idx` | 650 | 天赋：名称 / 文案 / 解锁阶段 |
+| `operator_talents` | 只读 | `id` + `idx` | 615 | 天赋：名称 / 文案 / 解锁阶段 |
 | `operator_modules` | 只读 | `id` + `moduleId` | 901 | 模组：名称 / 类型 / 解锁条件 |
 | `operator_module_levels` | 只读 | `id` + `moduleId` + `level` | 1524 | 模组三档的属性加成与效果文案 |
 | `ranges` | 只读 | `id` | 55 | 攻击范围格子坐标 `[[row, col], …]` |
@@ -293,21 +296,26 @@ python tools/build_db.py               # 两份 JSON → data/is6db.js（表产�
 ### 自测
 
 ```powershell
-node tests/engine.test.js              # 解析 + 结算 + 条件判定 + 作用域/费用回归 + 伤害估算（205 项断言）
+node tests/engine.test.js              # 解析 + 结算 + 条件判定 + 作用域/费用回归 + 伤害估算（212 项断言）
 node tests/db.test.js                  # 表结构 / 产物自洽 / 版本护栏 / 存档往返 / v2 兼容 / 用户表进运行时（189 项断言）
-node tests/app.smoke.js                # 极简 DOM 桩跑界面渲染 / 分页 / 槽位条 / 网格选人 / 编队上限 / 汇总展开 / 导入容错 / 伤害卡 / 头像白名单 / 备份回退 / 写失败提示 / Esc 与 aria / 分享链接 / 干员详情（185 项）
-python tools/check_enums.py            # 属性注册表、职业分支枚举、表结构（JS↔Python）、产物自洽、入口资源版本
+node tests/app.smoke.js                # 极简 DOM 桩跑界面渲染 / 分页 / 槽位条 / 网格选人 / 编队上限 / 汇总展开 / 导入容错 / 伤害卡 / 头像白名单 / 备份回退 / 写失败提示 / Esc 与 aria / 分享链接 / 干员详情 / 藏品键盘流与批量录入 / 按编队收敛 / 首屏结论与示例 / 技能查询页（256 项）
+node tests/server.test.js              # 后端：数据源指纹 / 面板字段透传 / 内置干员解析 / 校验夹紧（50 项断言）
+python tools/check_enums.py            # 属性注册表、职业分支枚举、表结构单一来源、产物自洽、入口资源版本、后端数据源、覆盖表、缓存方向
 python tools/release.py --dry-run      # 发布前自检：以上全部 + 生成上传清单
 python tools/audit_relics.py           # 作用域 / 敌我 / 费用对象自检（当前 0 问题）
 python tools/audit_numbers.py          # 文案数字对账（剩余 18 处均为时长/半径/概率）
 python tools/verify_operators.py       # 用 PRTS 逐页抓的 24 名干员交叉校验内置面板
 ```
 
-`check_enums.py` 会检查七件事：数据里出现的每个属性都已在 `core/schema.js` 注册（否则会被引擎静默丢弃）、
+`check_enums.py` 会检查十件事：数据里出现的每个属性都已在 `core/schema.js` 注册（否则会被引擎静默丢弃）、
 JS 与 Python 两侧的职业/分支枚举没有漂移、每个声明「可结算」的属性在 `engine.js` 里真有结算分支、
-`core/db/schema.js` 与 `tools/build_db.py` 的表定义（表名/主键/列）完全一致、
+表结构只有 `core/db/schema.js` 一份（`build_db.py` 直接在 Node 里读它，不许再抄镜像）、
 `data/is6db.json` 的列与行数和 `meta.counts` 对得上、源 JSON 不比产物新、
-`index.html` 里全部资源标签（当前 16 个）版本串一致且文件都在（部署前必跑）。
+`index.html` 里全部资源标签（当前 16 个）版本串一致且文件都在、
+`server/` 读的是同一份表产物且面板字段从 schema 派生（部署前必跑）、
+21 条人工覆盖在 `data/overrides/relics.json` 里且没被写回构建脚本、
+中间产物只作输出（`build_*.py` 不许反过来读自己产出的 JSON）。
+数据目录里哪个文件能删、哪个是人写的，见 `data/README.md`。
 
 ---
 
@@ -338,8 +346,10 @@ JS 与 Python 两侧的职业/分支枚举没有漂移、每个声明「可结�
 
 ## 部署给别人用
 
-页面是纯静态的：没有构建步骤、没有后端、没有外部资源（字体、CDN、统计脚本一个都没有），
-整个仓库直接传上去就能跑。但「本地能开」和「上线能用」之间隔着五件事。
+页面本身是纯静态的：没有构建步骤、没有外部资源（字体、CDN、统计脚本一个都没有），
+整个仓库直接传上去就能跑，不需要后端。`server/` 里另有一套可选的 API，
+复用同一份引擎与同一份表产物，只有想给别的程序调用时才需要部署。
+「本地能开」和「上线能用」之间隔着五件事。
 
 ### 0. 一条命令发布
 
@@ -349,11 +359,11 @@ python tools/release.py --dry-run  # 只校验，不改 index.html
 ```
 
 它做三件事：把 `index.html` 里 16 处 `?v=` 统一 +1（`20261029a → 20261029b`）、
-依次跑 `build_db.py --check` / `check_enums.py` / 三套测试、最后生成 `deploy/FILES.txt`
+依次跑 `build_db.py --check` / `check_enums.py` / 四套测试、最后生成 `deploy/FILES.txt`
 （21 个文件 / 1.8 MB，附响应头说明）。任一步失败会**还原 index.html**，不会留下半成品。
 
 `deploy/FILES.txt` 里那张表就是该传的东西 —— 刻意不含 `raw/`（52 MB 官方原始表）、
-`tools/`、`tests/`、`review/`、`AUDIT.md`。整包上传等于把抓取缓存和内部评审一起公开。
+`tools/`、`tests/`、`review/`、`server/`。整包上传等于把抓取缓存和内部评审一起公开。
 
 ### 1. 缓存版本要一致
 
@@ -424,6 +434,6 @@ python tools/release.py --dry-run  # 只校验，不改 index.html
 ---
 
 数据快照：**2026-10-29**（沉沦者的黑流树海「内容拓展·一」，251 件藏品 / 452 名干员 /
-997 条技能 / 650 条天赋 / 901 个模组 / 55 种攻击范围）。
+997 条技能 / 615 条天赋 / 901 个模组 / 55 种攻击范围）。
 本站为玩家二创工具，与鹰角网络及《明日方舟》官方无关。
 仅供个人计算参考，以游戏内表现为准。

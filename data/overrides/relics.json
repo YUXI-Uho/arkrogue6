@@ -1,0 +1,635 @@
+{
+ "rogue_6_relic_book_1": [
+  {
+   "stat": "dpOnSkill",
+   "bucket": "run",
+   "pct": false,
+   "value": 3,
+   "scope": {
+    "professions": [
+     "先锋"
+    ]
+   },
+   "cond": {
+    "type": "skillWindow",
+    "sec": 0,
+    "label": "技能开启时"
+   }
+  }
+ ],
+ "rogue_6_relic_assign_1": [
+  {
+   "stat": "atk",
+   "bucket": "panel",
+   "pct": true,
+   "value": 10,
+   "scope": {
+    "base": "friendly",
+    "assign": true,
+    "professions": [
+     "先锋"
+    ]
+   },
+   "cond": {
+    "type": "perStack",
+    "label": "每次开启技能（最多6层 / +60%）",
+    "cap": 6
+   }
+  }
+ ],
+ "rogue_6_relic_assign_2": [
+  {
+   "stat": "enemyRes",
+   "bucket": "enemy",
+   "pct": false,
+   "value": -5,
+   "scope": {
+    "base": "friendly",
+    "assign": true,
+    "professions": [
+     "术师"
+    ]
+   },
+   "cond": {
+    "type": "perStack",
+    "label": "每次命中（最多5层 / -25）",
+    "cap": 5
+   }
+  }
+ ],
+ "rogue_6_relic_assign_4": [
+  {
+   "stat": "spOnAttack",
+   "bucket": "combat",
+   "pct": false,
+   "value": 2,
+   "scope": {
+    "base": "friendly",
+    "assign": true,
+    "professions": [
+     "重装"
+    ]
+   },
+   "cond": {
+    "type": "proc",
+    "label": "受到攻击时"
+   }
+  }
+ ],
+ "rogue_6_relic_assign_5": [
+  {
+   "stat": "defIgnore",
+   "bucket": "combat",
+   "pct": true,
+   "value": 50,
+   "scope": {
+    "base": "friendly",
+    "assign": true,
+    "professions": [
+     "狙击"
+    ]
+   },
+   "cond": null
+  }
+ ],
+ "rogue_6_relic_assign_7": [
+  {
+   "stat": "redeploy",
+   "bucket": "panel",
+   "pct": true,
+   "value": -50,
+   "scope": {
+    "base": "friendly",
+    "assign": true,
+    "professions": [
+     "特种"
+    ]
+   },
+   "cond": null
+  }
+ ],
+ "rogue_6_relic_assign_8": [
+  {
+   "stat": "enemyDef",
+   "bucket": "enemy",
+   "pct": true,
+   "value": -40,
+   "scope": {
+    "base": "friendly",
+    "assign": true,
+    "professions": [
+     "辅助"
+    ]
+   },
+   "cond": null
+  },
+  {
+   "stat": "enemyRes",
+   "bucket": "enemy",
+   "pct": true,
+   "value": -40,
+   "scope": {
+    "base": "friendly",
+    "assign": true,
+    "professions": [
+     "辅助"
+    ]
+   },
+   "cond": null
+  }
+ ],
+ "rogue_6_relic_assign_9": [
+  {
+   "stat": "aspd",
+   "bucket": "panel",
+   "pct": false,
+   "value": 50,
+   "scope": {
+    "base": "friendly",
+    "assign": true
+   },
+   "cond": null
+  }
+ ],
+ "rogue_6_relic_assign_10": [
+  {
+   "stat": "atk",
+   "bucket": "panel",
+   "pct": true,
+   "value": 100,
+   "scope": {
+    "base": "friendly",
+    "assign": true
+   },
+   "cond": null
+  },
+  {
+   "stat": "aspd",
+   "bucket": "panel",
+   "pct": false,
+   "value": 50,
+   "scope": {
+    "base": "friendly",
+    "assign": true
+   },
+   "cond": null
+  }
+ ],
+ "rogue_6_relic_assign_11": [
+  {
+   "stat": "atk",
+   "bucket": "panel",
+   "pct": true,
+   "value": 50,
+   "scope": {
+    "base": "friendly",
+    "assign": true
+   },
+   "cond": {
+    "type": "proc",
+    "label": "首次部署时"
+   }
+  }
+ ],
+ "rogue_6_relic_assign_12": [
+  {
+   "stat": "aspd",
+   "bucket": "panel",
+   "pct": false,
+   "value": -50,
+   "scope": {
+    "base": "friendly",
+    "assign": true
+   },
+   "cond": null
+  },
+  {
+   "stat": "atk",
+   "bucket": "panel",
+   "pct": true,
+   "value": 120,
+   "scope": {
+    "base": "friendly",
+    "assign": true
+   },
+   "cond": null
+  }
+ ],
+ "rogue_6_relic_assign_13": [
+  {
+   "stat": "spCost",
+   "bucket": "panel",
+   "pct": true,
+   "value": -20,
+   "scope": {
+    "base": "friendly",
+    "assign": true
+   },
+   "cond": null
+  }
+ ],
+ "rogue_6_relic_assign_15": [
+  {
+   "stat": "spRecover",
+   "bucket": "panel",
+   "pct": false,
+   "value": 0.8,
+   "scope": {
+    "base": "friendly",
+    "assign": true
+   },
+   "cond": null
+  }
+ ],
+ "rogue_6_relic_hand_5": [
+  {
+   "stat": "spOnAttack",
+   "bucket": "combat",
+   "pct": false,
+   "value": 2,
+   "scope": {
+    "base": "friendly",
+    "subProfs": [
+     "轰击术师",
+     "链术师",
+     "驭械术师"
+    ]
+   },
+   "cond": {
+    "type": "all",
+    "of": [
+     {
+      "type": "proc",
+      "label": "造成伤害时"
+     }
+    ],
+    "label": "造成伤害时"
+   }
+  },
+  {
+   "stat": "atk",
+   "bucket": "panel",
+   "pct": true,
+   "value": 20,
+   "scope": {
+    "base": "friendly",
+    "subProfs": [
+     "轰击术师",
+     "链术师",
+     "驭械术师"
+    ]
+   },
+   "cond": {
+    "type": "all",
+    "of": [
+     {
+      "type": "hasRelic",
+      "relicId": "164",
+      "label": "拥有【断杖-同调】"
+     },
+     {
+      "type": "perStack",
+      "label": "造成伤害后3秒内（最多5层 / +100%）",
+      "cap": 5
+     }
+    ],
+    "label": "拥有【断杖-同调】时，造成伤害后 3 秒内每层 +20%（最多 5 层 / +100%）"
+   }
+  }
+ ],
+ "rogue_6_relic_hand_7": [
+  {
+   "stat": "weak",
+   "bucket": "combat",
+   "pct": true,
+   "value": 50,
+   "scope": {
+    "base": "enemy",
+    "subProfs": [
+     "秘术师",
+     "神射手",
+     "猎手"
+    ]
+   },
+   "cond": {
+    "type": "all",
+    "of": [
+     {
+      "type": "proc",
+      "label": "敌人进入攻击范围时"
+     }
+    ],
+    "label": "敌人进入攻击范围时（脆弱 3 秒）"
+   }
+  },
+  {
+   "stat": "atkScale",
+   "bucket": "combat",
+   "pct": true,
+   "value": 300,
+   "scope": {
+    "base": "enemy",
+    "subProfs": [
+     "秘术师",
+     "神射手",
+     "猎手"
+    ]
+   },
+   "cond": {
+    "type": "all",
+    "of": [
+     {
+      "type": "proc",
+      "label": "敌人进入攻击范围时"
+     }
+    ],
+    "label": "敌人进入攻击范围时（300% 伤害）"
+   }
+  }
+ ],
+ "rogue_6_relic_hand_1": [
+  {
+   "stat": "cost",
+   "bucket": "panel",
+   "pct": false,
+   "value": -6,
+   "scope": {
+    "subProfs": [
+     "尖兵",
+     "冲锋手",
+     "策士"
+    ]
+   },
+   "cond": null
+  },
+  {
+   "stat": "spCost",
+   "bucket": "panel",
+   "pct": true,
+   "value": -50,
+   "scope": {
+    "subProfs": [
+     "尖兵",
+     "冲锋手",
+     "策士"
+    ]
+   },
+   "cond": null
+  },
+  {
+   "stat": "spOnSkillEnd",
+   "bucket": "combat",
+   "pct": false,
+   "value": 2,
+   "scope": {
+    "subProfs": [
+     "尖兵",
+     "冲锋手",
+     "策士"
+    ]
+   },
+   "cond": {
+    "type": "all",
+    "of": [
+     {
+      "type": "hasRelic",
+      "relicId": "160",
+      "label": "拥有【钝爪-先机】"
+     }
+    ],
+    "label": "拥有【钝爪-先机】时：开技能给其他场上干员回 2 技力"
+   }
+  }
+ ],
+ "rogue_6_relic_hand_2": [
+  {
+   "stat": "dmgReduce",
+   "bucket": "combat",
+   "pct": true,
+   "value": 100,
+   "scope": {
+    "subProfs": [
+     "武者",
+     "无畏者",
+     "术战者"
+    ]
+   },
+   "cond": null
+  },
+  {
+   "stat": "redeploy",
+   "bucket": "panel",
+   "pct": true,
+   "value": -50,
+   "scope": {
+    "subProfs": [
+     "武者",
+     "无畏者",
+     "术战者"
+    ]
+   },
+   "cond": {
+    "type": "all",
+    "of": [
+     {
+      "type": "hasRelic",
+      "relicId": "161",
+      "label": "拥有【折戟-避锋】"
+     },
+     {
+      "type": "proc",
+      "label": "击倒敌人后"
+     }
+    ],
+    "label": "拥有【折戟-避锋】时：击倒敌人后 -50%"
+   }
+  },
+  {
+   "stat": "cost",
+   "bucket": "panel",
+   "pct": true,
+   "value": -50,
+   "scope": {
+    "subProfs": [
+     "武者",
+     "无畏者",
+     "术战者"
+    ]
+   },
+   "cond": {
+    "type": "all",
+    "of": [
+     {
+      "type": "hasRelic",
+      "relicId": "161",
+      "label": "拥有【折戟-避锋】"
+     },
+     {
+      "type": "proc",
+      "label": "击倒敌人后"
+     }
+    ],
+    "label": "拥有【折戟-避锋】时：击倒敌人后 -50%"
+   }
+  }
+ ],
+ "rogue_6_relic_hand_3": [
+  {
+   "stat": "atk",
+   "bucket": "panel",
+   "pct": true,
+   "value": 100,
+   "scope": {
+    "subProfs": [
+     "铁卫",
+     "哨戒铁卫",
+     "不屈者"
+    ]
+   },
+   "cond": {
+    "type": "early",
+    "sec": 60,
+    "label": "部署/技能结束后 60 秒内"
+   }
+  },
+  {
+   "stat": "hp",
+   "bucket": "panel",
+   "pct": true,
+   "value": 100,
+   "scope": {
+    "subProfs": [
+     "铁卫",
+     "哨戒铁卫",
+     "不屈者"
+    ]
+   },
+   "cond": {
+    "type": "early",
+    "sec": 60,
+    "label": "部署/技能结束后 60 秒内"
+   }
+  },
+  {
+   "stat": "block",
+   "bucket": "panel",
+   "pct": false,
+   "value": 3,
+   "scope": {
+    "subProfs": [
+     "铁卫",
+     "哨戒铁卫",
+     "不屈者"
+    ]
+   },
+   "cond": {
+    "type": "all",
+    "of": [
+     {
+      "type": "hasRelic",
+      "relicId": "162",
+      "label": "拥有【铁卫-轻行】"
+     },
+     {
+      "type": "hpAbove",
+      "pct": 50,
+      "label": "生命≥50%"
+     }
+    ],
+    "label": "拥有【铁卫-轻行】且生命≥50% 时：阻挡 +3"
+   }
+  }
+ ],
+ "rogue_6_relic_hand_4": [
+  {
+   "stat": "atk",
+   "bucket": "panel",
+   "pct": true,
+   "value": 150,
+   "scope": {
+    "subProfs": [
+     "炮手",
+     "散射手",
+     "裂空炮手"
+    ]
+   },
+   "cond": {
+    "type": "skillWindow",
+    "sec": 5,
+    "label": "技能开启后5秒内"
+   }
+  },
+  {
+   "stat": "spRecover",
+   "bucket": "panel",
+   "pct": false,
+   "value": 1,
+   "scope": {
+    "subProfs": [
+     "炮手",
+     "散射手",
+     "裂空炮手"
+    ]
+   },
+   "cond": {
+    "type": "all",
+    "of": [
+     {
+      "type": "hasRelic",
+      "relicId": "163",
+      "label": "拥有【残弩-神准】"
+     }
+    ],
+    "label": "拥有【残弩-神准】时：每 3 秒获得 3 点技力（+1/秒）"
+   }
+  }
+ ],
+ "rogue_6_relic_fight_12": [
+  {
+   "stat": "shieldPct",
+   "bucket": "combat",
+   "pct": true,
+   "value": 100,
+   "scope": {
+    "all": true
+   },
+   "cond": {
+    "type": "all",
+    "of": [
+     {
+      "type": "hpBelow",
+      "pct": 10,
+      "label": "生命<10% 时（仅一次）"
+     }
+    ],
+    "label": "生命<10% 时获得 100% 生命上限屏障"
+   }
+  }
+ ],
+ "rogue_6_relic_cargo_12": [
+  {
+   "stat": "enemyAtk",
+   "bucket": "enemy",
+   "pct": true,
+   "value": -50,
+   "scope": {
+    "base": "enemy"
+   },
+   "cond": null
+  },
+  {
+   "stat": "res",
+   "bucket": "panel",
+   "pct": false,
+   "value": 10,
+   "scope": {
+    "all": true
+   },
+   "cond": {
+    "type": "perRelicStack",
+    "relicId": "142",
+    "label": "每层【探测先锋】"
+   }
+  }
+ ]
+}

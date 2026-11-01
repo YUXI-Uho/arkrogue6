@@ -316,7 +316,16 @@
           rarity: m.rarity, category: m.category
         };
         if (!e.ok) { inactive.push(rec); return; }
-        if (!acc[m.stat]) return;
+        if (!acc[m.stat]) {
+          // 没在 core/schema.js 注册的属性（acc 里没有这个桶）以前直接 return，
+          // 修正项就此消失，界面上既看不到也没提示。与 spCost 一样归入
+          // 「未计入面板」并说明原因：不做假账，也不能静默丢。
+          // check_enums.py 会拦住数据侧出现的未知属性，这里是最后一道兜底。
+          unapplied.push(Object.assign({}, rec, {
+            reason: '该属性未在 core/schema.js 注册，未参与结算'
+          }));
+          return;
+        }
         if (pct) acc[m.stat].pct += value;
         else acc[m.stat].flat += value;
         acc[m.stat].list.push(rec);
@@ -400,6 +409,26 @@
       }
     }
     delta.interval = +(final.interval - intervalB).toFixed(3);
+
+    // 「攻击间隔」修正项：面板上的攻击间隔由攻速推导（基础 × 100 ÷ 最终攻速），
+    // 直接把 acc.interval 加进去会和攻速重复计算。当前数据里没有这类修正项，
+    // 但以前它们会被静默丢掉（累加进 acc 后没有任何地方读）。
+    // 现在挪进「未计入面板」并写明原因，宁可不算也不装作算了。
+    if (acc.interval.list.length) {
+      acc.interval.list.forEach(function (rec) {
+        if (rec.relicId === '') return;   // 分母为 0 的系统提示留在原处
+        unapplied.push({
+          relicId: rec.relicId, relicName: rec.relicName, stageName: rec.stageName,
+          stat: rec.stat, label: rec.label, pct: rec.pct, value: rec.value,
+          reason: '攻击间隔由攻速推导（基础 × 100 ÷ 最终攻速），该修正项未参与计算',
+          scopeLabel: rec.scopeLabel, text: rec.text,
+          rarity: rec.rarity, category: rec.category
+        });
+      });
+      acc.interval.list = acc.interval.list.filter(function (rec) { return rec.relicId === ''; });
+      acc.interval.flat = 0;
+      acc.interval.pct = 0;
+    }
 
     return {
       op: op,

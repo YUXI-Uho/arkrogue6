@@ -1,0 +1,30 @@
+[Unit]
+Description=IS6 calc API (node, 127.0.0.1:3000)
+After=network.target
+
+[Service]
+Type=simple
+User=is6
+Group=is6
+WorkingDirectory=/opt/is6-api
+ExecStart=/usr/bin/node server/index.js
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=HOST=127.0.0.1
+Environment=RATE_MAX=120
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+
+# 沙箱：只读系统目录、可写私有 /tmp、禁止提权
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/is6-api
+InaccessiblePaths=/root /var/www/is6
+MemoryMax=256M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

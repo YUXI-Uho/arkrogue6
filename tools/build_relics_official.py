@@ -22,6 +22,7 @@
   relics / relic_stages 两张表装进 data/is6db.js。加 --legacy-js 可额外
   吐一份 window.RELIC_DATA 的旧格式文件，仅供调试比对。
 """
+import io
 import json
 import os
 import sys
@@ -980,173 +981,27 @@ def dedupe_mods(mods):
 # 语义容易被读错（例如 160 的「获得部署费用」）。这些藏品直接按官方 usage 文案写成
 # 确定的修正项，逐条可对文案核对，不再依赖运行时正则。
 #
-# scope.assign = 只对「一次性藏品指定此人」勾选的干员生效。
-ASSIGN = {"base": "friendly", "assign": True}
+# 覆盖表已抽到 data/overrides/relics.json：改数值不用碰 Python，也不怕手滑写坏缩进。
+# 结构 = {官方藏品 id: [修正项, ...]}，修正项字段与下面 build_* 的产出一致：
+#   stat / bucket / pct / value / scope / cond / group
+# scope.assign = true 表示只对「一次性藏品指定此人」勾选的干员生效。
+OVERRIDES_PATH = os.path.join(DATA, "overrides", "relics.json")
 
 
-def _assign(prof=None):
-    sc = dict(ASSIGN)
-    if prof:
-        sc["professions"] = [prof]
-    return sc
+def load_overrides(path=None):
+    """读覆盖表。缺失时直接报错，而不是悄悄退化成「没有覆盖」——
+    静默降级会让 21 件藏品的数值凭空消失，而构建仍然显示「成功」。"""
+    p = path or OVERRIDES_PATH
+    if not os.path.exists(p):
+        raise SystemExit("缺少覆盖表 %s" % p)
+    with io.open(p, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise SystemExit("覆盖表格式不对：顶层必须是 {藏品 id: [修正项]}，实际是 %s" % type(data).__name__)
+    return data
 
 
-OVERRIDES = {
-    # 160 钝爪-先机：先锋开技能立刻获得 3 点部署费用
-    "rogue_6_relic_book_1": [
-        {"stat": "dpOnSkill", "bucket": "run", "pct": False, "value": 3,
-         "scope": {"professions": ["先锋"]}, "cond": _cond_skill(0)}
-    ],
-    # 174 钝爪-新典训：每次开技能攻击力 +10%，最多 +60%（6 层）
-    "rogue_6_relic_assign_1": [
-        {"stat": "atk", "bucket": "panel", "pct": True, "value": 10,
-         "scope": _assign("先锋"), "cond": _cond_stack("每次开启技能（最多6层 / +60%）", 6)}
-    ],
-    # 175 断杖-新典训：攻击时降低目标 5 点法抗，最多 25（5 层）
-    "rogue_6_relic_assign_2": [
-        {"stat": "enemyRes", "bucket": "enemy", "pct": False, "value": -5,
-         "scope": _assign("术师"), "cond": _cond_stack("每次命中（最多5层 / -25）", 5)}
-    ],
-    # 177 铁卫-新典训：受到攻击时回复 2 技力
-    "rogue_6_relic_assign_4": [
-        {"stat": "spOnAttack", "bucket": "combat", "pct": False, "value": 2,
-         "scope": _assign("重装"), "cond": _cond_proc("受到攻击时")}
-    ],
-    # 178 残弩-新典训：攻击时无视目标 50% 防御
-    "rogue_6_relic_assign_5": [
-        {"stat": "defIgnore", "bucket": "combat", "pct": True, "value": 50,
-         "scope": _assign("狙击"), "cond": None}
-    ],
-    # 180 锈刃-新典训：再部署时间 -50%
-    "rogue_6_relic_assign_7": [
-        {"stat": "redeploy", "bucket": "panel", "pct": True, "value": -50,
-         "scope": _assign("特种"), "cond": None}
-    ],
-    # 181 支柱-新典训：攻击范围内的敌人防御/法抗 -40%
-    "rogue_6_relic_assign_8": [
-        {"stat": "enemyDef", "bucket": "enemy", "pct": True, "value": -40,
-         "scope": _assign("辅助"), "cond": None},
-        {"stat": "enemyRes", "bucket": "enemy", "pct": True, "value": -40,
-         "scope": _assign("辅助"), "cond": None}
-    ],
-    # 182-188 一次性藏品：只对指定干员生效
-    "rogue_6_relic_assign_9": [
-        {"stat": "aspd", "bucket": "panel", "pct": False, "value": 50,
-         "scope": _assign(), "cond": None}
-    ],
-    "rogue_6_relic_assign_10": [
-        {"stat": "atk", "bucket": "panel", "pct": True, "value": 100,
-         "scope": _assign(), "cond": None},
-        {"stat": "aspd", "bucket": "panel", "pct": False, "value": 50,
-         "scope": _assign(), "cond": None}
-    ],
-    "rogue_6_relic_assign_11": [
-        {"stat": "atk", "bucket": "panel", "pct": True, "value": 50,
-         "scope": _assign(), "cond": _cond_proc("首次部署时")}
-    ],
-    "rogue_6_relic_assign_12": [
-        {"stat": "aspd", "bucket": "panel", "pct": False, "value": -50,
-         "scope": _assign(), "cond": None},
-        {"stat": "atk", "bucket": "panel", "pct": True, "value": 120,
-         "scope": _assign(), "cond": None}
-    ],
-    "rogue_6_relic_assign_13": [
-        {"stat": "spCost", "bucket": "panel", "pct": True, "value": -20,
-         "scope": _assign(), "cond": None}
-    ],
-    "rogue_6_relic_assign_15": [
-        {"stat": "spRecover", "bucket": "panel", "pct": False, "value": 0.8,
-         "scope": _assign(), "cond": None}
-    ],
-    # 171 波纹之手：三个分支每造成一次伤害回复 2 技力；
-    # 持有【断杖-同调】时，造成伤害后 3 秒内攻击力 +20%（最多 5 层 = +100%）
-    "rogue_6_relic_hand_5": [
-        {"stat": "spOnAttack", "bucket": "combat", "pct": False, "value": 2,
-         "scope": {"base": "friendly", "subProfs": ["轰击术师", "链术师", "驭械术师"]},
-         "cond": _cond_all([_cond_proc("造成伤害时")], "造成伤害时")},
-        {"stat": "atk", "bucket": "panel", "pct": True, "value": 20,
-         "scope": {"base": "friendly", "subProfs": ["轰击术师", "链术师", "驭械术师"]},
-         "cond": _cond_all([_cond_has_relic("164", "拥有【断杖-同调】"),
-                            _cond_stack("造成伤害后3秒内（最多5层 / +100%）", 5)],
-                           "拥有【断杖-同调】时，造成伤害后 3 秒内每层 +20%（最多 5 层 / +100%）")}
-    ],
-    # 173 剿袭之手：秘术师（法术）/ 神射手·猎手（物理）——敌人进入攻击范围时
-    # 受一次 300% 攻击力伤害 + 50% 脆弱 3 秒
-    "rogue_6_relic_hand_7": [
-        {"stat": "weak", "bucket": "combat", "pct": True, "value": 50,
-         "scope": {"base": "enemy", "subProfs": ["秘术师", "神射手", "猎手"]},
-         "cond": _cond_all([_cond_proc("敌人进入攻击范围时")], "敌人进入攻击范围时（脆弱 3 秒）")},
-        {"stat": "atkScale", "bucket": "combat", "pct": True, "value": 300,
-         "scope": {"base": "enemy", "subProfs": ["秘术师", "神射手", "猎手"]},
-         "cond": _cond_all([_cond_proc("敌人进入攻击范围时")], "敌人进入攻击范围时（300% 伤害）")}
-    ],
-    # 167 开拓之手：尖兵/冲锋手/策士费用 -6、技力需求 -50%；
-    # 持有【钝爪-先机】时，开启技能给其他场上干员回 2 技力
-    "rogue_6_relic_hand_1": [
-        {"stat": "cost", "bucket": "panel", "pct": False, "value": -6,
-         "scope": {"subProfs": ["尖兵", "冲锋手", "策士"]}, "cond": None},
-        {"stat": "spCost", "bucket": "panel", "pct": True, "value": -50,
-         "scope": {"subProfs": ["尖兵", "冲锋手", "策士"]}, "cond": None},
-        {"stat": "spOnSkillEnd", "bucket": "combat", "pct": False, "value": 2,
-         "scope": {"subProfs": ["尖兵", "冲锋手", "策士"]},
-         "cond": _cond_all([_cond_has_relic("160", "拥有【钝爪-先机】")],
-                           "拥有【钝爪-先机】时：开技能给其他场上干员回 2 技力")}
-    ],
-    # 168 诛戮之手：武者/无畏者/术战者伤害提升至 200%；
-    # 持有【折戟-避锋】时，击倒敌人后下次再部署时间与部署费用 -50%
-    "rogue_6_relic_hand_2": [
-        {"stat": "dmgReduce", "bucket": "combat", "pct": True, "value": 100,
-         "scope": {"subProfs": ["武者", "无畏者", "术战者"]}, "cond": None},
-        {"stat": "redeploy", "bucket": "panel", "pct": True, "value": -50,
-         "scope": {"subProfs": ["武者", "无畏者", "术战者"]},
-         "cond": _cond_all([_cond_has_relic("161", "拥有【折戟-避锋】"), _cond_proc("击倒敌人后")],
-                           "拥有【折戟-避锋】时：击倒敌人后 -50%")},
-        {"stat": "cost", "bucket": "panel", "pct": True, "value": -50,
-         "scope": {"subProfs": ["武者", "无畏者", "术战者"]},
-         "cond": _cond_all([_cond_has_relic("161", "拥有【折戟-避锋】"), _cond_proc("击倒敌人后")],
-                           "拥有【折戟-避锋】时：击倒敌人后 -50%")}
-    ],
-    # 169 坚御之手：铁卫/哨戒铁卫/不屈者部署与技能结束后攻防生命 +100%（60 秒内递减）；
-    # 持有【铁卫-轻行】时，生命高于 50% 时阻挡 +3
-    "rogue_6_relic_hand_3": [
-        {"stat": "atk", "bucket": "panel", "pct": True, "value": 100,
-         "scope": {"subProfs": ["铁卫", "哨戒铁卫", "不屈者"]},
-         "cond": _cond_early(60, "部署/技能结束后 60 秒内")},
-        {"stat": "hp", "bucket": "panel", "pct": True, "value": 100,
-         "scope": {"subProfs": ["铁卫", "哨戒铁卫", "不屈者"]},
-         "cond": _cond_early(60, "部署/技能结束后 60 秒内")},
-        {"stat": "block", "bucket": "panel", "pct": False, "value": 3,
-         "scope": {"subProfs": ["铁卫", "哨戒铁卫", "不屈者"]},
-         "cond": _cond_all([_cond_has_relic("162", "拥有【铁卫-轻行】"), _cond_hp_above(50, "生命≥50%")],
-                           "拥有【铁卫-轻行】且生命≥50% 时：阻挡 +3")}
-    ],
-    # 170 慑空之手：炮手/散射手/裂空炮手开技能攻击 +150%（5 秒）；
-    # 持有【残弩-神准】时，每 3 秒获得 3 点技力（= +1/秒）
-    "rogue_6_relic_hand_4": [
-        {"stat": "atk", "bucket": "panel", "pct": True, "value": 150,
-         "scope": {"subProfs": ["炮手", "散射手", "裂空炮手"]},
-         "cond": _cond_skill(5)},
-        {"stat": "spRecover", "bucket": "panel", "pct": False, "value": 1,
-         "scope": {"subProfs": ["炮手", "散射手", "裂空炮手"]},
-         "cond": _cond_all([_cond_has_relic("163", "拥有【残弩-神准】")],
-                           "拥有【残弩-神准】时：每 3 秒获得 3 点技力（+1/秒）")}
-    ],
-    # 124 染血辞典：生命低于 10% 时获得最大生命 100% 的屏障（一次）
-    "rogue_6_relic_fight_12": [
-        {"stat": "shieldPct", "bucket": "combat", "pct": True, "value": 100,
-         "scope": {"all": True},
-         "cond": _cond_all([_cond_hp_below(10, "生命<10% 时（仅一次）")],
-                           "生命<10% 时获得 100% 生命上限屏障")}
-    ],
-    # 209 猎印：猎犬proto 攻击 -50%（对敌），每层【探测先锋】我方法抗 +10
-    "rogue_6_relic_cargo_12": [
-        {"stat": "enemyAtk", "bucket": "enemy", "pct": True, "value": -50,
-         "scope": {"base": "enemy"}, "cond": None},
-        {"stat": "res", "bucket": "panel", "pct": False, "value": 10,
-         "scope": {"all": True},
-         "cond": _cond_per_relic_stack("142", "每层【探测先锋】")}
-    ],
-}
+OVERRIDES = load_overrides()
 
 
 def apply_overrides(base_id, mods):

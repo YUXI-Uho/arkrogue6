@@ -1,12 +1,12 @@
 # 上线文件清单
 
-由 `tools/release.py` 生成，版本串 **20261029h**。
+由 `tools/release.py` 生成，版本串 **20261101a**。
 
 只传下面这些文件，**不要**把 `raw/`（52 MB 官方原始表）、`tools/`、`tests/`、
-`review/`、`AUDIT.md` 一起传上去 —— 那是内部产物，公开出去既泄露抓取缓存也白白占带宽。
+`review/`、`server/` 一起传上去 —— 那是内部产物，公开出去既泄露抓取缓存也白白占带宽。
 
 ```
-index.html                                   11.8 KB
+index.html                                   13.2 KB
 404.html                                      0.6 KB
 robots.txt                                    0.2 KB
 manifest.json                                 0.6 KB
@@ -15,18 +15,18 @@ LICENSE                                       1.9 KB
 data/is6db.js                              1546.8 KB
 assets/404.css                                0.8 KB
 assets/icon.svg                               0.5 KB
-assets/style.css                             38.0 KB
+assets/style.css                             43.3 KB
 core/enums.js                                 4.1 KB
 core/schema.js                               15.9 KB
 core/db/db.js                                 6.4 KB
 core/db/migrate.js                            7.2 KB
 core/db/schema.js                            12.0 KB
-core/repos/operators.repo.js                 12.7 KB
-core/repos/relics.repo.js                     5.2 KB
+core/repos/operators.repo.js                 12.8 KB
+core/repos/relics.repo.js                     6.7 KB
 core/repos/squads.repo.js                     7.7 KB
-js/app.js                                   100.7 KB
+js/app.js                                   126.7 KB
 js/effects.js                                32.2 KB
-js/engine.js                                 24.8 KB
+js/engine.js                                 26.5 KB
 ```
 
 合计 21 个文件，1.8 MB。
@@ -39,4 +39,4 @@ js/engine.js                                 24.8 KB
 
 ## 自检
 
-传完打开站点，点右上角「公式说明」，拉到底部核对「资源版本」是否为 `20261029h`。
+传完打开站点，点右上角「公式说明」，拉到底部核对「资源版本」是否为 `20261101a`。
