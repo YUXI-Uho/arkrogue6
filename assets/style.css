@@ -180,7 +180,7 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
   /* 密集网格：一屏 40+ 件，选藏品不用滚 25 屏。
      未选中是紧凑瓦片（编号 + 名称两行），选中后跨整行展开出效果与档位控件。 */
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   align-content: start;
   gap: 6px;
   padding-right: 4px;
@@ -220,12 +220,15 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
 .relic-name:hover { color: var(--accent); }
 .relic-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 3px; color: var(--muted); font-size: 11px; }
 /* ---- 紧凑瓦片：未选中时只留名字，效果与标签让位给密度 ---- */
-.relic:not(.selected) { min-height: 46px; }
-.relic:not(.selected) .relic-head { gap: 5px; }
-.relic:not(.selected) .relic-head input[type="checkbox"] {
+/* 统一卡片高度：选中只换配色与控件，不再跨列展开 ——
+   跨列会让整块网格逐行错位（选一件就把后面的卡挤到下一行），
+   视觉上像排版坏掉。效果全文改为点名字打开弹窗。 */
+.relic { min-height: 64px; }
+.relic .relic-head { gap: 5px; }
+.relic .relic-head input[type="checkbox"] {
   width: 12px; height: 12px; margin-top: 1px; flex: 0 0 auto;
 }
-.relic:not(.selected) .relic-name {
+.relic .relic-name {
   font-size: 11px;
   font-weight: 500;
   line-height: 1.35;
@@ -237,10 +240,18 @@ input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; marg
   /* 给右上角的编号让位：88px 的瓦片里三四个字的名字会顶到编号上 */
   padding-right: 20px;
 }
-.relic:not(.selected) .relic-meta,
-.relic:not(.selected) .relic-body { display: none; }
-/* 选中 = 跨整行展开，档位 / 层数 / 效果文案回到原来的宽度 */
-.relic.selected { grid-column: 1 / -1; }
+/* 网格里一律不展开文案与标签：信息走弹窗，密度留给「一屏 40+」 */
+.relic .relic-meta,
+.relic .relic-body { display: none; }
+.relic .relic-controls { margin-top: 4px; gap: 4px; }
+.relic .relic-controls label.check {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10.5px; color: var(--muted); min-width: 0;
+}
+.relic .relic-controls select,
+.relic .relic-controls input { font-size: 11px; padding: 1px 4px; max-width: 76px; }
+.relic .relic-controls .stack { width: 50px; }
+.relic.selected { grid-column: auto; }
 .relic-list .empty { grid-column: 1 / -1; }
 /* 收敛提示条：没有编队时整条为空，不占高度 */
 .scope-note { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 2px 0 6px; }

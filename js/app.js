@@ -842,6 +842,9 @@
 
       var body = el('div', 'relic-body');
       var eff = E.effectTextFor(r, sel ? sel.stage : 0);
+      // 网格里不再展开文案（避免选中跨列把整块排版挤乱），
+      // 全文改为悬停提示 + 点名字打开弹窗。
+      card.title = eff;
       var effEl = el('div', 'effect' + (parsed.mods.length ? '' : ' special'), eff);
       body.appendChild(effEl);
       card.appendChild(body);
