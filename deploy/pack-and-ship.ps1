@@ -1,18 +1,26 @@
 <#
 .SYNOPSIS
   Build a clean deploy package, upload it, unpack on server and reload nginx.
-  Only ships files the browser needs (~6 MB).
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\pack-and-ship.ps1 -Server root@1.2.3.4
 
+.EXAMPLE
+  .\deploy\pack-and-ship.ps1 -Server root@1.2.3.4 -Port 2222 -Retries 5
+
 .NOTES
   Messages are ASCII on purpose: Windows PowerShell 5.1 reads .ps1 as GBK
   unless the file has a UTF-8 BOM, and non-ASCII output breaks -f formatting.
+
+  If ssh times out right after scp succeeded (common: cloud anti-bruteforce
+  drops port 22 for a while), the zip is already on the server. The script
+  prints the exact commands to finish the deploy from Workbench.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Server,
-  [string]$WebRoot = "/var/www/is6"
+  [string]$WebRoot = "/var/www/is6",
+  [int]$Port = 22,
+  [int]$Retries = 3
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,13 +49,12 @@ try {
   Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
 
   $mb = [math]::Round((Get-Item $zip).Length / 1MB, 1)
-  Write-Host "[1/3] package built: $mb MB" -ForegroundColor Cyan
+  Write-Host "[1/4] package built: $mb MB" -ForegroundColor Cyan
 
-  Write-Host "[2/3] uploading to $Server" -ForegroundColor Cyan
-  scp $zip "${Server}:/tmp/is6.zip"
+  Write-Host "[2/4] uploading to $Server (port $Port)" -ForegroundColor Cyan
+  scp -P $Port $zip "${Server}:/tmp/is6.zip"
   if ($LASTEXITCODE -ne 0) { throw "scp failed" }
 
-  Write-Host "[3/3] unpack + reload nginx" -ForegroundColor Cyan
   $remote = @"
 # No 'set -e': Compress-Archive writes backslash paths, so unzip exits 1 (warning only)
 # and set -e would abort before chown/nginx reload.
@@ -62,14 +69,36 @@ nginx -t || exit 4
 systemctl reload nginx || exit 5
 rm -f /tmp/is6.zip
 echo "--- deployed ---"
-ls ${WebRoot}
 curl -s -o /dev/null -w "local check: %{http_code}\n" http://127.0.0.1/
 "@
-  ssh $Server $remote
-  if ($LASTEXITCODE -ne 0) { throw "remote command failed" }
+
+  $ok = $false
+  for ($i = 1; $i -le $Retries; $i++) {
+    Write-Host "[3/4] unpack + reload (attempt $i/$Retries)" -ForegroundColor Cyan
+    ssh -p $Port $Server $remote
+    if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+    if ($i -lt $Retries) {
+      $wait = 5 * $i
+      Write-Host "      ssh failed, retrying in $wait s (port 22 may be rate-limited)" -ForegroundColor Yellow
+      Start-Sleep -Seconds $wait
+    }
+  }
+
+  if (-not $ok) {
+    Write-Host ""
+    Write-Host "[4/4] ssh unreachable, but the zip IS already uploaded." -ForegroundColor Yellow
+    Write-Host "      Finish the deploy from Alibaba Cloud Workbench (browser terminal):" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host '      cd /var/www && rm -rf is6.bak && cp -a is6 is6.bak' -ForegroundColor White
+    Write-Host '      rm -rf is6/* && unzip -oq /tmp/is6.zip -d is6' -ForegroundColor White
+    Write-Host '      chown -R nginx:nginx is6 && nginx -t && systemctl reload nginx' -ForegroundColor White
+    Write-Host ''
+    Write-Host "      Then check: curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/" -ForegroundColor White
+    exit 1
+  }
 
   $hostOnly = ($Server -split "@")[-1]
-  Write-Host "done -> http://$hostOnly/" -ForegroundColor Green
+  Write-Host "[4/4] done -> http://$hostOnly/" -ForegroundColor Green
 }
 finally {
   if (Test-Path $stage) { Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue }
