@@ -48,6 +48,15 @@ function str(v, max) {
   return typeof v === 'string' ? v.slice(0, max) : '';
 }
 
+/* 干员名归一化：全角空格、零宽字符、首尾空白都清掉。
+ * 以前「玛恩纳 」这种输入查不到内置数据，会静默降级成 0 面板。 */
+function normName(v) {
+  if (typeof v !== 'string') return '';
+  var s = v;
+  if (typeof s.normalize === 'function') s = s.normalize('NFKC');
+  return s.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, ' ').trim();
+}
+
 function bad(status, error) {
   return { ok: false, status, error };
 }
@@ -64,18 +73,24 @@ function validateCalc(body) {
   }
 
   const outRelics = [];
-  const seen = new Set();
+  // id -> "stage|stack"。完全相同的重复直接去重；
+  // 同 id 不同档位/层数说明客户端状态自相矛盾，必须报出来，不能静默取第一个。
+  const seen = new Map();
   for (const r of relics || []) {
     if (!r || typeof r !== 'object') return bad(400, 'relics 元素必须是对象');
     const id = str(r.id, LIMITS.idLen);
     if (!id) return bad(400, 'relics[].id 必填');
-    if (seen.has(id)) continue;                 // 重复选择直接去重，不报错
-    seen.add(id);
-    outRelics.push({
-      id,
-      stage: clampNum(r.stage, 0, 3, 0),
-      stack: clampNum(r.stack, 0, 999, 0)
-    });
+    const stage = clampNum(r.stage, 0, 3, 0);
+    const stack = clampNum(r.stack, 0, 999, 0);
+    const sig = stage + '|' + stack;
+    if (seen.has(id)) {
+      if (seen.get(id) !== sig) {
+        return bad(400, '同一藏品出现了不同的档位/层数：' + id + '（' + seen.get(id) + ' vs ' + sig + '）');
+      }
+      continue;
+    }
+    seen.set(id, sig);
+    outRelics.push({ id, stage, stack });
   }
 
   const ops = body.operators;
@@ -89,7 +104,7 @@ function validateCalc(body) {
     if (!o || typeof o !== 'object') return bad(400, 'operators 元素必须是对象');
     const item = {
       id: o.id ? str(o.id, LIMITS.idLen) : '',
-      name: o.name ? str(o.name, LIMITS.nameLen) : '',
+      name: o.name ? str(normName(o.name), LIMITS.nameLen) : '',
       profession: o.profession ? str(o.profession, LIMITS.profLen) : '',
       subProfession: o.subProfession ? str(o.subProfession, LIMITS.profLen) : '',
       position: o.position === 'RANGED' || o.position === '远程位' ? '远程位' : '近战位',
@@ -113,10 +128,15 @@ function validateCalc(body) {
   }
 
   const c = body.ctx && typeof body.ctx === 'object' ? body.ctx : {};
+  // 职业人数只认八大职业：以前任何键都会写进对象（__proto__ / constructor 也进得来），
+  // 虽然值被夹成数字、没造成原型污染，但对象会变脏、也掩盖了客户端 bug。
+  const PROFESSIONS = (globalThis.ArkEnums && globalThis.ArkEnums.PROFESSIONS) || null;
   const profCounts = {};
   if (c.profCounts && typeof c.profCounts === 'object') {
-    for (const k of Object.keys(c.profCounts).slice(0, 12)) {
-      profCounts[str(k, LIMITS.profLen)] = clampNum(c.profCounts[k], 0, 20, 0);
+    for (const k of Object.keys(c.profCounts).slice(0, 24)) {
+      const key = str(k, LIMITS.profLen);
+      if (PROFESSIONS && PROFESSIONS.indexOf(key) < 0) continue;
+      profCounts[key] = clampNum(c.profCounts[k], 0, 20, 0);
     }
   }
   const ctx = {

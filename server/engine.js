@@ -78,13 +78,38 @@ function customOperator(input) {
   return op;
 }
 
+/* 与 validate.js 同规则：全角空格 / 零宽字符 / 首尾空白都清掉。
+ * calc 也可能被直接调用（测试、脚本），所以这里再归一化一次。 */
+function normName(v) {
+  if (typeof v !== 'string') return '';
+  let t = v;
+  if (typeof t.normalize === 'function') t = t.normalize('NFKC');
+  return t.replace(/[\u200B-\u200D\uFEFF\u00A0]/g, ' ').trim();
+}
+
 function resolveOperator(input) {
-  const row = (input.id && OperatorRepo.getById(input.id)) ||
-    (input.name && OperatorRepo.getByName(input.name)) || null;
-  return row ? builtinOperator(row, input) : customOperator(input);
+  const rawId = input.id ? String(input.id).trim() : '';
+
+  // 1) 给了 id：以 id 为准（id 是数据表主键，不会误伤）
+  if (rawId) {
+    const row = OperatorRepo.getById(rawId);
+    if (row) return { op: builtinOperator(row, input), resolved: true };
+    if (!input.panel) return { op: null, resolved: false };
+    return { op: customOperator(input), resolved: true };
+  }
+
+  // 2) 没给 id 但给了 panel：就是自定义干员，名字只用来显示。
+  //    （有个同名内置干员也不能覆盖用户填的面板，否则「空白干员改个名字」会被悄悄换成官方数据）
+  if (input.panel) return { op: customOperator(input), resolved: true };
+
+  // 3) 只有名字：查内置；查不到就是写错了。
+  //    以前这里会静默造一个全 0 面板，用户看到「攻击力 0」还以为算对了。
+  const row = OperatorRepo.getByName(normName(input.name));
+  return row ? { op: builtinOperator(row, input), resolved: true } : { op: null, resolved: false };
 }
 
 function compactItems(items, limit) {
+  const total = items.length;
   const out = [];
   for (const it of items) {
     if (out.length >= limit) break;
@@ -100,7 +125,7 @@ function compactItems(items, limit) {
       reason: it.reason || ''
     });
   }
-  return out;
+  return { items: out, total, truncated: total > limit };
 }
 
 const ITEM_LIMIT = 40;
@@ -112,17 +137,65 @@ function calc(payload) {
 
   const mods = E.buildModifiers(selection, RELIC_INDEX);
 
-  const ops = (payload.operators || []).map(resolveOperator);
-  const results = ops.map(op => {
+  // 计数只统计「真的生效了」的藏品：未知 id 不再混进 relics 里冒充生效
+  const applied = [];
+  const ignored = [];
+  for (const sel of selection) {
+    (RelicRepo.getById(sel.id) ? applied : ignored).push(sel.id);
+  }
+
+  const ops = [];
+  const warnings = [];
+  const unresolved = new Set();
+  (payload.operators || []).forEach((input, index) => {
+    const r = resolveOperator(input);
+    if (r.resolved) {
+      ops.push(r.op);
+    } else {
+      unresolved.add(index);
+      ops.push(null);
+      warnings.push({ index, name: input.name || '', reason: 'unknown_operator' });
+    }
+  });
+
+  // 全是未知干员：这是输入错误，直接 400，而不是回一堆 0
+  if (ops.length && unresolved.size === ops.length) {
+    const err = new Error('这些干员查不到内置数据，也没有提供 panel');
+    err.status = 400;
+    err.code = 'unknown_operator';
+    err.details = warnings;
+    throw err;
+  }
+
+  const results = ops.map((op, index) => {
+    if (!op) {
+      return {
+        id: null,
+        name: (warnings.find(w => w.index === index) || {}).name || '',
+        resolved: false,
+        base: null,
+        final: null,
+        delta: null,
+        inactive: [],
+        unapplied: []
+      };
+    }
     const r = E.computeOperator(op, mods, ctx);
+    const ina = compactItems(r.inactive, ITEM_LIMIT);
+    const una = compactItems(r.unapplied, ITEM_LIMIT);
     return {
       id: op.id,
       name: op.name,
+      resolved: true,
       base: r.base,
       final: r.final,
       delta: r.delta,
-      inactive: compactItems(r.inactive, ITEM_LIMIT),
-      unapplied: compactItems(r.unapplied, ITEM_LIMIT)
+      inactive: ina.items,
+      inactiveTotal: ina.total,
+      inactiveTruncated: ina.truncated,
+      unapplied: una.items,
+      unappliedTotal: una.total,
+      unappliedTruncated: una.truncated
     };
   });
 
@@ -132,25 +205,40 @@ function calc(payload) {
     for (const key of Object.keys(sum[bucket])) {
       const rec = sum[bucket][key];
       if (!rec || (!rec.flat && !rec.pct && !rec.items.length)) continue;
+      const it = compactItems(rec.items, ITEM_LIMIT);
       summary[bucket][key] = {
         flat: rec.flat,
         pct: rec.pct,
-        items: compactItems(rec.items, ITEM_LIMIT)
+        items: it.items,
+        itemsTotal: it.total,
+        itemsTruncated: it.truncated
       };
     }
   }
   summary.special = (sum.special || []).slice(0, 120).map(m => ({
     relicId: m.relicId, relicName: m.relicName, text: m.text
   }));
-  summary.unapplied = compactItems(sum.unapplied, ITEM_LIMIT);
+  const sumUna = compactItems(sum.unapplied, ITEM_LIMIT);
+  summary.unapplied = sumUna.items;
+  summary.unappliedTotal = sumUna.total;
+  summary.unappliedTruncated = sumUna.truncated;
 
+  const firstOp = ops.find(Boolean) || null;
   const damage = payload.damage
-    ? E.estimateDamage(payload.damage, mods, ctx, ops[0])
+    ? E.estimateDamage(payload.damage, mods, ctx, firstOp)
     : null;
 
   return {
     ok: true,
-    counts: { relics: selection.length, operators: ops.length, mods: mods.length },
+    counts: {
+      requested: selection.length,
+      applied: applied.length,
+      ignored,
+      relics: applied.length,
+      operators: ops.length,
+      mods: mods.length
+    },
+    warnings,
     operators: results,
     summary,
     damage

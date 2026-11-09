@@ -125,6 +125,66 @@ eq(ctx.time, 3600, '战斗时间夹到 3600');
 eq(ctx.hpPct, 0, '生命百分比夹到 0');
 eq(ctx.profCounts['术师'], 20, '职业人数夹到 20');
 
+console.log('=== 6. 缺陷回归 ===');
+
+// P1-1 未知干员名：以前静默变成 0 面板，现在是显式的 400
+let threw = null;
+try {
+  engine.calc({ operators: [{ name: '不存在的干员' }] });
+} catch (e) {
+  threw = e;
+}
+ok(threw && threw.status === 400 && threw.code === 'unknown_operator',
+  '未知干员名 → 400 unknown_operator');
+
+// 名字带尾随空格/全角空格：归一化后仍能匹配内置数据
+const spaced = engine.calc({ operators: [{ name: '玛恩纳 ' }] });
+ok(spaced.operators[0].resolved === true && spaced.operators[0].final.atk > 0,
+  '尾随空格被归一化，仍匹配内置干员（攻击力 ' + spaced.operators[0].final.atk + '）');
+const fullWidth = engine.calc({ operators: [{ name: '玛恩纳\u3000' }] });
+ok(fullWidth.operators[0].resolved === true, '全角空格同样被归一化');
+
+// 同名但显式给了 panel：必须用 panel（自定义），不能被内置数据顶掉
+const customNamed = engine.calc({
+  operators: [{ name: '玛恩纳', panel: { hp: 1000, atk: 123, def: 0, res: 0 } }]
+});
+eq(customNamed.operators[0].final.atk, 123, '给了 panel 就按自定义算，不被同名内置干员覆盖');
+eq(customNamed.operators[0].id, null, '自定义干员没有内置 id');
+
+// P1-2 counts 语义：requested / applied / ignored 分开
+const mixed = engine.calc({
+  relics: [{ id: '145' }, { id: 'no-such-relic' }],
+  operators: []
+}).counts;
+eq(mixed.requested, 2, 'counts.requested = 请求数');
+eq(mixed.applied, 1, 'counts.applied = 真正生效数');
+eq(mixed.ignored.join(','), 'no-such-relic', 'counts.ignored 列出未知 id');
+
+// P1-3 同一藏品不同档位：以前静默取第一个，现在 400
+eq(validateCalc({ relics: [{ id: '006', stage: 0 }, { id: '006', stage: 3 }] }).status, 400,
+  '同 id 不同档位 → 400');
+eq(validateCalc({ relics: [{ id: '006', stage: 1 }, { id: '006', stage: 1 }] }).ok, true,
+  '完全相同的重复才去重');
+
+// P2-6 职业人数白名单（用 JSON.parse 才能造出真正的 __proto__ 键）
+const dirty = JSON.parse('{"ctx":{"profCounts":{"\u672f\u5e08":2,"__proto__":5,"constructor":7,"\u4e0d\u5b58\u5728":3}}}');
+const clean = validateCalc(dirty).value.ctx.profCounts;
+eq(Object.keys(clean).sort().join(','), '术师', '职业人数只收八大职业，脏键被丢');
+eq(clean['术师'], 2, '合法职业正常保留');
+
+// P2-4 明细超过 40 条时有截断标记（数据未触发则跳过）
+const bulk = engine.calc({
+  relics: ARTIFACT.tables.relics.slice(0, 120).map(r => ({ id: r.id, stage: 0, stack: 0 })),
+  operators: []
+});
+const atk = bulk.summary.panel.atk;
+if (atk && atk.itemsTotal > 40) {
+  eq(atk.items.length, 40, '明细截到 40 条');
+  eq(atk.itemsTruncated, true, '截断时 itemsTruncated=true');
+} else {
+  ok(true, '本次数据未触发 40 条截断（跳过）');
+}
+
 console.log();
 if (fail) {
   console.log(`后端测试：通过 ${pass} 项，失败 ${fail} 项`);

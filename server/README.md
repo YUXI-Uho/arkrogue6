@@ -59,18 +59,50 @@
 ```json
 {
   "ok": true,
-  "counts": { "relics": 2, "operators": 1, "mods": 5 },
+  "counts": {
+    "requested": 2,
+    "applied": 1,
+    "ignored": ["no-such-relic"],
+    "relics": 1,
+    "operators": 1,
+    "mods": 5
+  },
+  "warnings": [],
   "operators": [{
-    "id": "char_4064_mlynar", "name": "玛恩纳",
+    "id": "char_4064_mlynar", "name": "玛恩纳", "resolved": true,
     "base": { "hp": 3906, "atk": 385, "...": 0 },
     "final": { "atk": 635, "...": 0 },
     "delta": { "atk": 250, "...": 0 },
-    "inactive": [], "unapplied": []
+    "inactive": [], "inactiveTotal": 0, "inactiveTruncated": false,
+    "unapplied": [], "unappliedTotal": 0, "unappliedTruncated": false
   }],
-  "summary": { "panel": { "atk": { "flat": 0, "pct": 65, "items": [] } }, "combat": {}, "run": {}, "special": [] },
+  "summary": {
+    "panel": { "atk": { "flat": 0, "pct": 65, "items": [], "itemsTotal": 0, "itemsTruncated": false } },
+    "combat": {}, "run": {}, "special": [], "unapplied": []
+  },
   "damage": { "phys": 435, "magic": 444.5, "trueDmg": 635, "detail": { "...": 0 } }
 }
 ```
+
+语义约定（宁可报错，也不静默给个错结果）：
+
+- `counts` 分开报 `requested`（请求数）/ `applied`（真的生效）/ `ignored`（未知 id 清单）；
+  `relics` 保留为 `applied` 的别名，兼容旧调用方。
+- `operators[].resolved=false` 表示「名字没匹配到内置数据且没给 panel」，此时面板为空；
+  若**全部**干员都这样，接口直接返回 400 `unknown_operator`，不再回一堆 0。
+- 显式传了 `panel` 就按自定义干员算，即使名字与某个内置干员相同。
+- 明细超过 40 条会截断，但一定带 `*Total` / `*Truncated`，不会静默丢数据。
+
+### 错误码
+
+| 状态 | `code` / 说明 | 触发条件 |
+| --- | --- | --- |
+| 400 | `unknown_operator` | 所有干员都查不到内置数据，也没给 panel |
+| 400 | `同一藏品出现了不同的档位/层数` | 同一 id 传了两个不同 stage/stack |
+| 400 | `bad_request` 类文字 | JSON 结构不对、面板字段类型错 |
+| 413 | `relics/operators 超过上限`、`请求体过大` | 藏品 >300、干员 >12、body >64KB |
+| 415 | `Content-Type 必须是 application/json` | 少头/头不对 |
+| 429 | `请求过于频繁` | 超过每 IP 120 次/分钟 |
 
 ## 限制与防护
 

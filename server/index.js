@@ -67,18 +67,27 @@ function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0;
     let tooBig = false;
+    let settled = false;
     const chunks = [];
     req.on('data', chunk => {
+      if (settled) return;
       size += chunk.length;
-      if (size > LIMITS.maxBody) {
-        tooBig = true;
-        if (size > LIMITS.maxBody * 8) { req.destroy(); return; }
+      if (size > LIMITS.maxBody * 8) {
+        // 硬上限：立刻停止读取并回 413，不再像以前那样 destroy 后等 15 秒超时
+        settled = true;
+        req.pause();
+        resolve({ text: '', tooBig: true, hardCut: true });
         return;
       }
+      if (size > LIMITS.maxBody) { tooBig = true; return; }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve({ text: tooBig ? '' : Buffer.concat(chunks).toString('utf8'), tooBig }));
-    req.on('error', reject);
+    req.on('end', () => {
+      if (settled) return;
+      settled = true;
+      resolve({ text: tooBig ? '' : Buffer.concat(chunks).toString('utf8'), tooBig });
+    });
+    req.on('error', err => { if (!settled) { settled = true; reject(err); } });
   });
 }
 
@@ -137,6 +146,14 @@ async function handle(req, res) {
       const result = calc(v.value);
       return send(res, 200, result);
     } catch (err) {
+      if (err && err.status === 400) {
+        return send(res, 400, {
+          ok: false,
+          code: err.code || 'bad_request',
+          error: err.message,
+          details: err.details || []
+        });
+      }
       console.error('calc failed:', err && err.stack ? err.stack : err);
       return send(res, 500, { ok: false, error: '计算失败' });
     }
