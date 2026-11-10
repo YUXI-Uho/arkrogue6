@@ -94,7 +94,8 @@
       // 技能页：不落存档，靠 #skill= 分享
       skillOp: '', skillSearch: '', skillFirst: '',
       // 分页与卡片密度
-      tab: 'squad', editAll: false, onlyChanged: false
+      tab: 'squad', editAll: false, onlyChanged: false,
+      previewOp: 0, previewStat: 'atk'
     }
   };
 
@@ -145,16 +146,25 @@
   }
 
   var toastTimer = null;
-  function toast(msg) {
+  function toast(msg, action) {
     var box = document.getElementById('toast');
     if (!box) return;
+    box.innerHTML = '';
     box.textContent = msg;
+    if (action) {
+      var btn = el('button', 'tiny', action.label);
+      btn.onclick = function () {
+        box.classList.remove('show');
+        action.run();
+      };
+      box.appendChild(btn);
+    }
     box.classList.add('show');
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(function () {
       box.classList.remove('show');
       toastTimer = null;
-    }, 2200);
+    }, action ? 6000 : 2200);
   }
 
   function indexOfName(name) {
@@ -327,6 +337,101 @@
       it5.title = '只统计真有这项属性的干员，召唤物不参与';
       box.appendChild(it5);
     }
+  }
+
+  // 主工作区结果：选藏品后无需切页就能读最终值，并能追到具体来源。
+  function renderWorkspacePreview() {
+    var box = document.getElementById('workspacePreview');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!state.squad.length) {
+      var empty = el('div', 'preview-empty');
+      empty.appendChild(el('strong', null, '添加干员，立即查看藏品对面板的影响'));
+      empty.appendChild(el('span', null, '选中藏品后，最终值、变化和来源会在这里同步更新。'));
+      box.appendChild(empty);
+      return;
+    }
+
+    var idx = Math.max(0, Math.min(state.ui.previewOp, state.squad.length - 1));
+    state.ui.previewOp = idx;
+    var op = state.squad[idx];
+    var res = getResults()[idx];
+    var keys = ['atk', 'hp', 'def', 'res', 'aspd', 'cost'];
+    if (keys.indexOf(state.ui.previewStat) < 0) state.ui.previewStat = 'atk';
+    var key = state.ui.previewStat;
+    var head = el('div', 'preview-head');
+    var title = el('div', 'preview-title');
+    title.appendChild(el('span', 'preview-eyebrow', '实时结果 · 当前干员'));
+    title.appendChild(el('h3', null, op.name || FALLBACK_NAME));
+    head.appendChild(title);
+    var picker = document.createElement('select');
+    picker.className = 'preview-picker';
+    picker.setAttribute('aria-label', '查看哪位干员的结果');
+    state.squad.forEach(function (item, i) {
+      var opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = (i + 1) + '. ' + (item.name || FALLBACK_NAME);
+      picker.appendChild(opt);
+    });
+    picker.value = String(idx);
+    picker.onchange = function () { state.ui.previewOp = +picker.value; renderWorkspacePreview(); };
+    head.appendChild(picker);
+    box.appendChild(head);
+
+    var grid = el('div', 'preview-stats');
+    keys.forEach(function (k) {
+      var d = num(res.delta[k]);
+      var card = el('button', 'preview-stat' + (k === key ? ' on' : '') + (d < 0 ? ' down' : '' ));
+      card.type = 'button';
+      card.setAttribute('aria-pressed', k === key ? 'true' : 'false');
+      card.appendChild(el('span', 'preview-stat-label', S.labelOf(k)));
+      card.appendChild(el('strong', null, fmt(num(res.final[k]), S.decimalsOf(k))));
+      card.appendChild(el('span', 'preview-delta', d === 0 ? '无变化' : signed(d, S.decimalsOf(k))));
+      card.onclick = function () { state.ui.previewStat = k; renderWorkspacePreview(); };
+      grid.appendChild(card);
+    });
+    box.appendChild(grid);
+
+    var detail = el('div', 'preview-detail');
+    var summary = el('div', 'preview-detail-head');
+    summary.appendChild(el('strong', null, S.labelOf(key) + ' · ' + fmt(num(res.base[key]), S.decimalsOf(key)) + ' → ' + fmt(num(res.final[key]), S.decimalsOf(key))));
+    var full = el('button', 'tiny ghost', '完整面板与汇总');
+    full.onclick = function () { setTab('summary'); };
+    summary.appendChild(full);
+    detail.appendChild(summary);
+    var sources = res.acc[key] && res.acc[key].list || [];
+    if (sources.length) {
+      var list = el('ul', 'preview-sources');
+      sources.forEach(function (item) {
+        var li = el('li');
+        li.appendChild(el('span', null, item.relicName + (item.stageName ? ' · ' + item.stageName : '')));
+        li.appendChild(el('b', null, fmtDelta(item.value, item.pct)));
+        list.appendChild(li);
+      });
+      detail.appendChild(list);
+    } else {
+      detail.appendChild(el('p', 'preview-no-source', '当前没有直接作用于这项面板的藏品加成。'));
+    }
+    var inactive = (res.inactive || []).length;
+    var unapplied = (res.unapplied || []).length;
+    if (inactive || unapplied) {
+      var note = el('div', 'preview-notice');
+      note.appendChild(el('span', null, (inactive ? inactive + ' 项条件未满足' : '') +
+        (inactive && unapplied ? ' · ' : '') + (unapplied ? unapplied + ' 项未计入面板' : '')));
+      var ctx = el('button', 'tiny', '查看条件');
+      ctx.onclick = function () { setTab('ctx'); };
+      note.appendChild(ctx);
+      detail.appendChild(note);
+      if (inactive) {
+        var unmetList = el('ul', 'preview-unmet');
+        res.inactive.slice(0, 3).forEach(function (item) {
+          unmetList.appendChild(el('li', null, item.relicName + '：' + (item.reason || '当前条件未满足')));
+        });
+        if (inactive > 3) unmetList.appendChild(el('li', null, '还有 ' + (inactive - 3) + ' 项，点「查看条件」查看全部。'));
+        detail.appendChild(unmetList);
+      }
+    }
+    box.appendChild(detail);
   }
 
   // 一键示例：让第一次打开的人 3 秒内看到「数字会动」。
@@ -989,6 +1094,7 @@
     if (!state.squad.length) {
       box.appendChild(el('p', 'empty', '还没有干员。点上面任意空槽位或「添加干员」从全部 ' +
         OP.all().length + ' 名干员里选，或点「空白干员」手动填面板。'));
+      renderWorkspacePreview();
       return;
     }
 
@@ -1015,6 +1121,7 @@
         }
         if (!dup) dupWarned = '';
         save();
+        if (state.ui.previewOp === idx) renderWorkspacePreview();
       };
       // 失焦兜底：空名 / 纯空格回填「未命名干员」。
       // 不这么做的话空名会被仓储的读取侧当成坏数据，重载时整条干员连同面板一起消失。
@@ -1051,8 +1158,7 @@
 
       var del = el('button', 'del tiny', '删除');
       del.onclick = function () {
-        Squad.removeAt(state.squad, idx);
-        afterSquadChange();
+        removeSquadAt(idx);
       };
       head.appendChild(del);
       card.appendChild(head);
@@ -1130,6 +1236,7 @@
 
       box.appendChild(card);
     });
+    renderWorkspacePreview();
   }
 
   // 只重算当前这一张卡，不用整队重算
@@ -1137,6 +1244,7 @@
     var resBox = card.querySelector('[data-role="result"]');
     if (!resBox) return;
     fillResult(resBox, E.computeOperator(OP.toCalcInput(op), getMods(), buildCtx()), op);
+    renderSummary();
   }
 
   function fillResult(box, res, op) {
@@ -1589,6 +1697,7 @@
     renderCtxNeed(mods);
     renderCtxUnmet(s);
     renderDmg();
+    renderWorkspacePreview();
   }
 
   // ---------- 编队槽位条 ----------
@@ -1627,8 +1736,7 @@
     x.title = '移出编队';
     x.onclick = function (ev) {
       if (ev && ev.stopPropagation) ev.stopPropagation();
-      Squad.removeAt(state.squad, idx);
-      afterSquadChange();
+      removeSquadAt(idx);
     };
     s.appendChild(x);
     s.onclick = function () { focusCard(idx); };
@@ -1784,8 +1892,7 @@
   function togglePick(o) {
     var idx = indexOfName(o.name);
     if (idx >= 0) {
-      Squad.removeAt(state.squad, idx);
-      afterSquadChange();
+      removeSquadAt(idx);
       return;
     }
     var r = Squad.add(state.squad, OP.makeSquadEntry(o));
@@ -1798,6 +1905,25 @@
     var r = Squad.add(state.squad, OP.makeBlankEntry(state.squad));
     if (!r.ok) { toast(r.reason); return; }
     afterSquadChange();
+  }
+
+  function removeSquadAt(idx) {
+    var result = Squad.removeAt(state.squad, idx);
+    if (!result.ok || !result.removed) return;
+    var removed = result.removed;
+    state.ui.previewOp = Math.max(0, Math.min(state.ui.previewOp, state.squad.length - 1));
+    afterSquadChange();
+    toast('已移出「' + (removed.name || FALLBACK_NAME) + '」', {
+      label: '撤销',
+      run: function () {
+        var check = Squad.canAdd(state.squad, removed);
+        if (!check.ok) { toast(check.reason); return; }
+        state.squad.splice(Math.min(idx, state.squad.length), 0, removed);
+        state.ui.previewOp = idx;
+        afterSquadChange();
+        toast('已恢复「' + (removed.name || FALLBACK_NAME) + '」');
+      }
+    });
   }
 
   // 编队结构变化后的统一收尾：存档 + 重画编队/汇总/网格/预设
@@ -2813,6 +2939,14 @@
       var b = document.getElementById(t.btn);
       if (b) b.onclick = function () { setTab(t.key); };
     });
+    function jumpTo(id, tab) {
+      if (tab) setTab(tab);
+      var target = document.getElementById(id);
+      if (target && target.scrollIntoView) target.scrollIntoView({ block: 'start', behavior: 'auto' });
+    }
+    document.getElementById('quickRelics').onclick = function () { jumpTo('relicPanel'); };
+    document.getElementById('quickSquad').onclick = function () { jumpTo('squadStrip', 'squad'); };
+    document.getElementById('quickResults').onclick = function () { jumpTo('workspacePreview', 'squad'); };
     var savedTab = null;
     try { savedTab = localStorage.getItem(TAB_KEY); } catch (e) { savedTab = null; }
     setTab(savedTab || 'squad');

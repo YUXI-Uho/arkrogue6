@@ -548,6 +548,10 @@ async function main() {
   setTime(90);
   ok(finalOf('攻击力') === baseAtk,
      't=90（超出 60 秒）后攻击力回到 ' + baseAtk + '（实际 ' + finalOf('攻击力') + '）');
+  const previewDetail = $('workspacePreview').children.filter(c => c.className === 'preview-detail')[0];
+  const previewUnmet = previewDetail && previewDetail.children.filter(c => c.className === 'preview-unmet')[0];
+  ok(!!previewUnmet && previewUnmet.children.some(c => /钝爪/.test(c.textContent)),
+     '主工作区直接列出未生效藏品及原因');
 
   // ④ 条件未满足的项不计入合计，但要在卡片底部留一行计数提示
   const panelCard = $('summaryBody').children
@@ -618,6 +622,13 @@ const slotX = strip.children[0].children.filter(x => String(x.className) === 'sl
 ok(!!slotX, '槽位带移出按钮');
 slotX.click();
 ok(cards().length === 0, '从槽位移出后编队为空');
+const undo = $('toast').children.filter(x => x.tagName === 'BUTTON' && x.textContent === '撤销')[0];
+ok(!!undo, '移出干员后提供撤销入口');
+if (undo) undo.click();
+ok(cards().length === 1, '撤销后干员及面板恢复');
+const deleteBtn = cards()[0].children[0].children.filter(x => String(x.className).indexOf('del') >= 0)[0];
+if (deleteBtn) deleteBtn.click();
+ok(cards().length === 0, '卡片删除仍可正常移出干员');
 
 console.log('=== 汇总行展开来源 ===');
 $('btnReset').click();
@@ -992,6 +1003,26 @@ if (noScale.length) {
   ok(/项加成生效/.test(verdictText()), '结论条显示生效项数');
   ok(/全队平均 攻击 \+/.test(verdictText()), '结论条给出全队平均攻击涨幅：' + verdictText());
   ok(/已载入示例/.test($('toast').textContent), '提示已载入示例：' + $('toast').textContent);
+
+  console.log('=== 主工作区实时结果 ===');
+  const preview = () => $('workspacePreview');
+  const statButtons = () => preview().children.filter(c => c.className === 'preview-stats')[0].children;
+  ok(/实时结果/.test(deepText(preview())), '编队页直接展示当前干员结果');
+  ok(statButtons().length === 6, '关键面板一屏显示 6 项');
+  const previewAtkBefore = deepText(statButtons()[0]);
+  const nextRelic = $('relicList').children.filter(c => c.dataset && c.dataset.id && !savedState().relics[c.dataset.id])[0];
+  if (nextRelic) nextRelic.children[0].children[0].checked = true, nextRelic.children[0].children[0].change();
+  ok(/实时结果/.test(deepText(preview())) && !!previewAtkBefore, '选藏品后结果区仍在原位并刷新');
+  statButtons()[1].click();
+  ok(statButtons()[1].getAttribute('aria-pressed') === 'true', '切换属性时来源明细同步切换');
+  $('tabSummary').click();
+  $('quickResults').click();
+  ok($('tabSquad').getAttribute('aria-selected') === 'true', '手机结果入口返回主工作区');
+  if (nextRelic) {
+    const cb = cardOf(nextRelic.dataset.id).children[0].children[0];
+    cb.checked = false;
+    cb.change();
+  }
 
   // 同一份示例跑两次必须一模一样，否则「示例」就不可复现
   const squadNames = () => (savedState().squad || []).map(o => o.name).join(',');
