@@ -115,7 +115,7 @@ function validateCalc(body) {
       return bad(400, 'operators[] 需要 id / name / panel 之一');
     }
     if (o.panel != null) {
-      if (typeof o.panel !== 'object') return bad(400, 'operators[].panel 必须是对象');
+      if (typeof o.panel !== 'object' || Array.isArray(o.panel)) return bad(400, 'operators[].panel 必须是对象');
       const panel = {};
       // 白名单 = schema 里「能结算到面板」的字段；不在表里的键一律丢掉
       for (const k of S.SETTLED_KEYS) {
@@ -127,7 +127,10 @@ function validateCalc(body) {
     outOps.push(item);
   }
 
-  const c = body.ctx && typeof body.ctx === 'object' ? body.ctx : {};
+  if (body.ctx != null && (typeof body.ctx !== 'object' || Array.isArray(body.ctx))) {
+    return bad(400, 'ctx 必须是对象');
+  }
+  const c = body.ctx || {};
   // 职业人数只认八大职业：以前任何键都会写进对象（__proto__ / constructor 也进得来），
   // 虽然值被夹成数字、没造成原型污染，但对象会变脏、也掩盖了客户端 bug。
   const PROFESSIONS = (globalThis.ArkEnums && globalThis.ArkEnums.PROFESSIONS) || null;
@@ -154,7 +157,10 @@ function validateCalc(body) {
   };
 
   let damage = null;
-  if (body.damage && typeof body.damage === 'object') {
+  if (body.damage != null && (typeof body.damage !== 'object' || Array.isArray(body.damage))) {
+    return bad(400, 'damage 必须是对象');
+  }
+  if (body.damage) {
     damage = {
       atk: clampNum(body.damage.atk, 0, 1e6, 0),
       scale: clampNum(body.damage.scale, 0, 100, 1),

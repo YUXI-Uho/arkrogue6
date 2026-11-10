@@ -91,7 +91,7 @@ S.GAME_TABLES.forEach(name => {
   ok(bad.length === 0, name + ' 每行的列与 DDL 完全一致（' + rows.length + ' 行）',
      bad.length ? '首个不符：' + Object.keys(bad[0]).join(',') : '');
 
-  // 主键唯一性由 Table 构造时的 _pk 保证，这里反向确认没有丢行
+  // 产物的重复主键由上面的 DB.check 报错；这里确认运行时有效行没有重复
   eq(rows.length, new Set(rows.map(r => S.pkOf(name, r))).size, name + ' 主键无重复');
 });
 
@@ -202,6 +202,20 @@ ok(!lowChk.ok && lowChk.issues.some(s => /请运行 tools\/build_db.py/.test(s))
    '产物版本偏低时给出「重新生成」提示');
 
 DB.load(art);   // 复位成正常产物，后面的用例继续用
+
+const duplicateArtifact = { meta: { schemaVersion: S.VERSION, counts: { relics: 2 } }, tables: {} };
+S.GAME_TABLES.forEach(name => { duplicateArtifact.tables[name] = []; });
+duplicateArtifact.tables.relics = [
+  { id: 'duplicate', category: 'first' },
+  { id: 'duplicate', category: 'second' }
+];
+DB.load(duplicateArtifact);
+const deduped = DB.table('relics');
+eq(deduped.count(), 1, '重复主键只保留一行');
+eq(deduped.all()[0].category, 'first', '重复主键保留第一条');
+eq(deduped.by('category', 'second').length, 0, '二级索引不包含重复行');
+ok(!DB.check().ok, '重复主键仍使产物自检失败');
+DB.load(art);
 
 // ---------------------------------------------------------------- 5. 存档往返
 console.log('=== 5. 存档往返（v3） ===');

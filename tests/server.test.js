@@ -93,6 +93,9 @@ eq(validateCalc({ relics: 'x' }).status, 400, 'relics 非数组 → 400');
 eq(validateCalc({ operators: 'x' }).status, 400, 'operators 非数组 → 400');
 eq(validateCalc({ operators: [{ name: 'a' }] }).ok, true, '只给名字是合法请求');
 eq(validateCalc({ operators: [{}] }).status, 400, '既无 id/name 又无 panel → 400');
+eq(validateCalc({ operators: [{ panel: [] }] }).status, 400, '数组 panel → 400');
+eq(validateCalc({ ctx: [] }).status, 400, '数组 ctx → 400');
+eq(validateCalc({ damage: [] }).status, 400, '数组 damage → 400');
 
 const tooManyRelics = validateCalc({ relics: new Array(LIMITS.maxRelics + 1).fill({ id: '145' }) });
 eq(tooManyRelics.status, 413, '藏品超上限 → 413');

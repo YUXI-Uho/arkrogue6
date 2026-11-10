@@ -37,17 +37,18 @@
   function Table(name, def, rows) {
     this.name = name;
     this.def = def;
-    this.rows = rows || [];
+    this.rows = [];
     this._pk = Object.create(null);
     this._idx = Object.create(null);
     var self = this;
-    this.rows.forEach(function (row) {
+    (rows || []).forEach(function (row) {
       var k = S.pkOf(name, row);
       if (self._pk[k]) {
         issues.push(name + ' 主键重复：' + k.replace(/\u0001/g, '+') + '（保留第一条）');
         return;
       }
       self._pk[k] = row;
+      self.rows.push(row);
     });
   }
 
